@@ -1,0 +1,1682 @@
+{
+  "cells": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "kind": "ElbowSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "ElbowSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "kind": "TeeNSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowNW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "TeeNEW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowNW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "GalvanizedIron",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      {
+        "kind": "Source",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "Sink",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "PEX",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      }
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      {
+        "kind": "ElbowSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      }
+    ],
+    [
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "TeeNSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "TeeNEW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "TeeNSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "TeeNSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null
+    ],
+    [
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "TeeSEW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowNW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "TeeNSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      }
+    ],
+    [
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "TeeNSE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "TeeNSW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      }
+    ],
+    [
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowNW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      null,
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeV",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "ElbowNE",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      null,
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "PipeH",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      },
+      {
+        "kind": "ElbowNW",
+        "diameter": "ThreeQuarter",
+        "valve_state": null,
+        "material": "Copper",
+        "pipe_length": 1.0,
+        "drain_type": "Generic",
+        "source_pressure_psi": 60.0
+      }
+    ]
+  ],
+  "width": 33,
+  "height": 12
+}

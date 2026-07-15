@@ -1,0 +1,42 @@
+{
+  "name": "My Glyph Library",
+  "version": "1.0",
+  "overrides": {},
+  "custom_components": [
+    {
+      "id": "test",
+      "label": "test",
+      "glyph": {
+        "symbol": "T",
+        "fg": [
+          184,
+          115,
+          51
+        ]
+      },
+      "connections_nsew": [
+        false,
+        false,
+        true,
+        true
+      ],
+      "equiv_length_d": 0.0,
+      "composite_size": [
+        9,
+        9
+      ],
+      "cell_overrides": {
+        "4,4": "┄",
+        "4,2": "┄",
+        "4,8": "┄",
+        "4,0": "┄",
+        "4,5": "┄",
+        "4,6": "┄",
+        "4,3": "┄",
+        "4,1": "┄",
+        "1,2": "T",
+        "4,7": "┄"
+      }
+    }
+  ]
+}

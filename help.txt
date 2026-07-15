@@ -1,0 +1,482 @@
+# FLOW DYNAMICS — Help
+
+Flow Dynamics is a pipe network designer and fluid flow simulator.
+Draw plumbing layouts on the canvas, run the simulation to watch fluid travel
+from Source to Sink, and save reusable sub-systems as named assemblies.
+
+Press [H] at any time to open or close this screen.
+
+---
+
+# Global Keys
+
+[H]         Open / close this help screen (hot-reloads help.txt each open)
+[Q]         Quit the application
+[Ctrl+C]    Force quit
+[Tab]       Switch focus between Canvas ↔ Palette panels
+[N]         New diagram  (prompts to save if the canvas has content)
+[Ctrl+S]    Save layout  — opens the file browser dialog
+[Ctrl+O]    Open layout  — opens the file browser dialog
+[Ctrl+Z]    Undo last action  (up to 50 steps)
+[Ctrl+Y]    Redo last undone action
+[F]         Cycle fluid type  (Water → Light Oil → Natural Gas → Steam → Glycol → Hydraulic Oil)
+[P]         Play  — run the simulation
+[S]         Stop  — return to Build mode  (from Simulating or Paused)
+[Space]     Pause / resume simulation
+[B]         Bill of Materials overlay
+[G]         Open Glyph Editor
+[C]         Open Settings screen  (glyph file auto-load list, config)
+[X]         Export diagram  — opens the Export dialog (Text or JSON)
+[Y]         Open Assembly Browser
+[R]         Start rectangle selection (save a region as an assembly)
+[A]         Toggle dimension annotations on pipes
+[1]–[6]    Select material directly (Copper / PEX / GalvanizedIron / PE / BlackPlastic / CastIron)
+
+---
+
+# Build Mode — Canvas
+
+The Canvas is the main drawing area.  Focus it with [Tab].
+
+## Cursor & Placement
+
+[Arrow]      Move cursor one cell (Up / Down / Left / Right)
+[Home]       Jump to the first placed component (topmost row, leftmost cell)
+[End]        Jump to the last placed component (bottommost row, rightmost cell)
+[Enter]      Place the selected palette component at the cursor
+[Del]        Delete the component at the cursor
+
+## Component Editing
+
+[V]           Toggle valve open / closed at the cursor
+[M]           Cycle pipe material at the cursor
+[D]           Cycle pipe diameter  (½" → ¾" → 1")
+[T]           Cycle drain / sink type at the cursor
+[+] / [=]    Increase pipe length  +1 ft  (hold Shift: +6 in)
+[-]           Decrease pipe length  -1 ft  (hold Shift: -6 in)
+[L]           Enter exact pipe length  (e.g. `12'6"`)
+[I]           Increase source pressure  +10 psi
+[Shift+I]     Decrease source pressure  -10 psi
+
+## Annotations
+
+Press [Enter] while Label or Note is selected in the Palette to open the text prompt.
+Type your annotation text and press [Enter] to place it.
+Press [Esc] while the placed preview is shown on the canvas to cancel placement.
+
+[E]    Edit the label or note at the cursor position
+
+Label text spreads across empty cells to the right of its anchor.
+Notes are framed in a double-line box.
+Within the note editor: [Arrow] moves the cursor, [Shift+Enter] inserts a line break,
+and plain [Enter] confirms.  You may also type `|` as a line separator.
+When the cursor is on a placed note, [E]dit appears above the box — press [E] to reopen the editor.
+
+## Palette Scrolling (from Canvas focus)
+
+[[]     Scroll palette up one item
+[]]     Scroll palette down one item
+
+---
+
+# Build Mode — Palette
+
+The Palette lists all available component types.  Focus it with [Tab].
+
+[Arrow]           Navigate the component list (Up / Down)
+[PageUp/PageDn]   Jump 10 items at a time
+[Home]            Jump to the first component in the list
+[End]             Jump to the last component in the list
+[D]               Cycle diameter for the selected component type
+[M]               Cycle material for the selected component type
+[L]               Edit pipe length  or  open Component Detail overlay
+[+] / [-]         Adjust the default pipe length for the selected type
+[1]–[6]          Select material directly
+
+---
+
+# Build Mode — Palette Colors
+
+The Palette Colors panel is shown when a component that supports color overrides is
+selected (custom glyph components).  Focus cycles to it via [Tab].
+
+[Arrow]           Navigate the color swatch grid (Up / Down / Left / Right)
+[Home]            Jump to the first material in the material list
+[End]             Jump to the last material in the material list
+[E]               Enter a custom RGB color  (type R, G, B values at the prompt)
+[M]               Cycle the material scope for this color override
+
+---
+
+# Export Dialog
+
+Press [X] from Build, Simulating, or Paused mode to open the Export dialog.
+
+[T]    Export as Text  (.txt)  — saves the canvas as a UTF-8 character grid
+[J]    Export as JSON  (.json) — saves the diagram data (same format as a layout save)
+[Esc]  Cancel — return to the previous screen
+
+Both options open the File Browser to choose a filename and location.
+The text export traces every component as its display character, spreads label text
+across empty cells, and writes the note box framing — giving a faithful plain-text
+representation of the canvas.
+
+---
+
+# New Diagram
+
+Press [N] from any screen to start a new diagram.
+
+If the canvas is empty, it clears immediately.
+
+If the canvas has content, a confirmation dialog appears with three options:
+
+[S]  Save & New     — opens the file browser to save first, then clears
+[D]  Discard & New  — discards all content immediately, no save
+[C]  Cancel         — returns to the current diagram unchanged
+
+Arrow keys move the highlight between options; [Enter] confirms the selection.
+Any other key cancels and returns to the diagram.
+
+---
+
+# File Browser
+
+Opens when you press [Ctrl+S] (Save) or [Ctrl+O] (Open), or choose Save & New.
+
+## Navigating
+
+[Arrow Up / Down]    Move the selection up and down through the list
+[PageUp / PageDn]    Jump 10 entries at a time
+[Home]               Jump to the top of the file list
+[End]                Jump to the bottom of the file list
+[Enter]              Open a directory  or  select a file
+[Left] / [Bsp]       Go up to the parent directory
+[Esc]                Cancel and return to the previous screen
+
+Directories are shown in blue with a `▸` prefix.
+`▲ ..` at the top of the list always goes up one level.
+
+## Saving a File
+
+[Tab]      Toggle focus between the file list and the filename input box
+[Enter]    When the filename box is focused — save to the entered name
+
+You can also type any character to jump directly to the filename box.
+Pressing [Enter] on a file in the list copies its name into the filename box.
+`.json` is added automatically if you do not type an extension.
+
+## Opening a File
+
+Navigate to the file and press [Enter] to load it.
+
+---
+
+# Quit
+
+Press [Q] from Build, Simulating, or Paused mode to quit.
+
+If the canvas has unsaved changes, a confirmation dialog appears:
+
+[S]  Save & Quit   — opens the file browser to save, then exits
+[Q]  Quit          — exits immediately without saving
+[C]  Cancel        — returns to the current screen
+
+Arrow keys move the highlight between options; [Enter] confirms the selection.
+Any other key also cancels and returns to the diagram.
+
+---
+
+# Simulation Mode
+
+Press [P] from Build mode to run the simulation.
+
+[Space]     Pause / resume
+[S]         Stop and return to Build mode
+
+## Reading the Results
+
+Cells that receive fluid from a Source show animated water characters.
+Pressurized (dead-end flowing) branches glow differently from through-flow ones.
+Cells with no path from a Source remain un-highlighted.
+
+A warning appears in the status bar if the network has no reachable Sink,
+or if no Source is present.
+
+---
+
+# Undo / Redo
+
+[Ctrl+Z]    Undo the last change (up to 50 steps)
+[Ctrl+Y]    Redo the last undone change
+
+Undo is available in Build, Simulating, and Paused modes.
+Every placement, deletion, valve toggle, material cycle, length adjustment,
+pressure change, assembly stamp, and new-diagram action is tracked.
+
+---
+
+# Bill of Materials
+
+Press [B] to open.  Lists every component on the canvas with its material,
+diameter, and pipe length.  Useful for estimating material quantities.
+
+[Q] / [B]   Close the BOM overlay
+
+---
+
+# Glyph Editor
+
+Press [G] to open.  Customize how each component kind is rendered — change the
+display character and color, or define entirely new multi-cell custom components.
+
+[Tab]        Cycle panel focus: Component list → Symbol grid → Color picker
+[Arrow]      Navigate within the focused panel
+[Home]       Jump to the first component in the component list
+[End]        Jump to the last component in the component list
+[Enter]      Apply the selected character + color as a glyph override
+[M]          Cycle material scope  (which material this override applies to)
+[D]          Cycle diameter scope
+[N]          Begin defining a new custom component
+[W]          Set composite width for a custom component
+[Del]        Clear the tile under the composite editor cursor
+[S]          Save glyph library to file
+[L]          Load glyph library from file
+[Q] / [G]   Exit the Glyph Editor
+
+## Custom RGB Color
+
+[E]    Open a color prompt when the Color picker panel is focused.
+       Type three comma-separated values (0–255) for R, G, B and press [Enter].
+       Moving to any palette swatch clears the custom color.
+
+## Composite Port Assignment
+
+When editing a custom component's grid, press these keys on any border cell to
+assign a port type.  The character updates automatically to show the connection direction.
+
+[I]    Set as Inlet   — supply input from an upstream pipe (green border character)
+[O]    Set as Outlet  — supply output to a downstream pipe (blue border character)
+[D]    Set as Drain   — drain connection (orange border character)
+
+Press the same key again on a port to remove it.  Press a different key to replace it.
+A `✓` marker appears in the row label when the cursor is on a cell that already has a port.
+
+Custom components are saved to `glyphs.json` and participate fully in the simulation.
+
+---
+
+# Assembly Browser
+
+Press [Y] to open.  Assemblies are named rectangular regions of the canvas
+saved for re-use — handy for common sub-systems like shower fixtures or valve sets.
+
+[Arrow]              Navigate saved assemblies (Up / Down)
+[PageUp / PageDn]    Jump 10 assemblies at a time
+[Home]               Jump to the first assembly in the list
+[End]                Jump to the last assembly in the list
+[Enter]              Enter Stamp mode to place the selected assembly
+[Del] / [Backspace]  Delete the selected assembly
+[Q] / [Y]           Close the browser
+
+## Stamp Mode
+
+After pressing [Enter] in the browser, position the ghost preview:
+
+[Arrow]    Move stamp preview (Up / Down / Left / Right)
+[Enter]    Confirm — paste the assembly onto the canvas
+[Esc] / [Q]    Cancel stamp
+
+---
+
+# Rectangle Selection
+
+Press [R] from Build mode to start a selection.
+
+[Arrow]          Extend / shrink the selection rectangle (Up / Down / Left / Right)
+[Enter] / [R]    Confirm — prompts for a name, then saves as an assembly
+[Esc] / [Q]     Cancel selection
+
+---
+
+# Component Detail
+
+Lets you configure per-port arm-stub lengths on multi-port components.
+Open from the Palette panel with [L] when a Tee, Cross, or similar is selected.
+
+[Arrow]           Navigate the port list (Up / Down)
+[PageUp / PageDn] Jump 10 ports at a time
+[Home]            Jump to the first port
+[End]             Jump to the last port
+[Enter]           Edit the length of the selected port stub
+[Esc] / [Q]      Close the overlay
+
+---
+
+# Settings Screen
+
+Press [C] to open.  Manages persistent configuration stored in
+`flow-dynamics.config.json` alongside your layouts.
+
+## Glyph Library Files
+
+A list of `.json` glyph library files loaded automatically at startup, in
+order.  Later entries override earlier ones for the same component / material /
+diameter key, so you can layer a project-specific file on top of a base library.
+
+[↑↓]              Select a file in the list
+[PageUp / PageDn]  Jump 10 entries at a time
+[Home]             Jump to the first entry
+[End]              Jump to the last entry
+[A]               Add a file path  (opens a text prompt; the file is also loaded immediately)
+[D/Del]           Remove the selected entry from the list  (does not delete the file on disk)
+[L]               Reload the selected file right now without restarting
+
+After any change the updated config is saved to disk automatically.
+
+[C] / [Q] / [Esc]   Close the Settings screen
+
+---
+
+# Help Screen
+
+This screen.  Loaded from `help.txt` in the working directory.
+
+[↑↓]          Scroll one line at a time
+[PgUp/PgDn]   Scroll one page at a time
+[Home]         Jump to the top of the help text
+[End]          Jump to the bottom of the help text
+[H] / [Esc]   Close this screen
+
+Edit `help.txt` in any text editor to add your own notes.
+Changes take effect the next time you press [H] — no restart needed.
+
+---
+
+# Splash Screen & Custom Logos
+
+The splash screen loads a diagram from `splash.json` in the working directory.
+
+To create your own animated splash screen:
+  1. Build any layout in the app (design it like a logo or decorative diagram).
+  2. Add at least one Source and one Sink so the simulation is valid.
+  3. Press [Ctrl+S] and save the file as `splash.json`.
+  4. Restart the app — your diagram loads and simulates live on the splash screen!
+
+The pipe-art "FLOW DYNAMICS" logo shipped with the app was built this way.
+
+---
+
+# Fixture Components
+
+Fixture components represent plumbing end-points.  Some are simple drain
+terminals; others have separate supply and drain connections.
+
+## Toilet  ○
+
+A 11×5 composite showing the toilet footprint in plan view.
+Connects to a cold-water supply pipe on either side (E or W).
+Acts as a drain terminal (pressure = 0 at the fixture).
+Use [T] to cycle the flush-demand type (e.g. Toilet 1.28 GPM).
+
+## Faucet/Sink  ≈
+
+A 11×5 composite showing a faucet supply point in plan view.
+Connects to a cold/hot supply pipe on either side (E or W).
+Acts as a drain terminal (pressure = 0 at the fixture).
+Use [T] to cycle the fixture demand type (e.g. Kitchen 2.2 GPM, Bath 1.5 GPM).
+
+## Basin Sink  ⊔
+
+A 13×5 composite with two distinct connections:
+  • E or W supply port (mid-height, shown by ╠/╣)
+  • South drain port at the bottom center of the box (shown by ╨)
+
+Place a vertical drain pipe below the drain port (╨) and run it down to a
+Drain (D) outlet.  When the drain is connected, water flows through normally.
+When no drain pipe is connected, the status bar shows "overflow" and the top
+of the composite animates with ≋/≈/~ water characters to indicate the basin
+is full and overflowing.
+
+Use [T] to cycle the fixture demand type.
+
+## Water Heater  ▲
+
+A 15×5 composite (inline, not a terminal).
+Cold water enters on the W port; hot water exits on the E port.
+The heater adds ~60 pipe-diameters of equivalent friction (tank and fittings).
+When the simulation is running, the interior cells animate with bubbling/heating
+characters (·, ∘, °) and glow orange to show the tank heating up.
+Hot supply continues to downstream fixtures (shower, sinks, etc.).
+
+## Water Softener
+
+A 17×5 composite (inline, not a terminal).
+Hard water enters on the W port; conditioned water exits on the E port.
+Behaves the same as the Water Heater in terms of simulation friction.
+
+## Whole House Filter  ⊞
+
+An inline composite, E/W ports.
+Carbon or mixed-media filter for whole-house water treatment.
+Equivalent friction: ~50 pipe-diameters.
+
+## Sediment Filter  ⊟
+
+An inline composite, E/W ports.
+Particle pre-filter; typically installed upstream of finer filters.
+Equivalent friction: ~30 pipe-diameters.
+
+## UV Filter  ⊕
+
+An inline composite, E/W ports.
+Ultraviolet disinfection stage with minimal pressure drop.
+Equivalent friction: ~10 pipe-diameters.
+
+## Pressure Gauge  ⊙
+
+A single-cell inline gauge with four-way ports (N/S/E/W).
+Reads local pressure at the point of installation.
+Zero friction loss — purely for monitoring.
+
+---
+
+# Structure Components
+
+## Solid Block  █
+
+A single-cell solid-fill character.  Has no plumbing ports and is completely
+invisible to the simulation.  Use it to sketch room outlines, walls, floors,
+or ceilings around your plumbing layout.
+
+Solid Blocks appear in the Bill of Materials with a count but no material or
+length data, since they carry no pipe information.
+
+---
+
+# Materials & Colors
+
+[1]  Copper           warm gold   — standard household supply lines
+[2]  PEX              red         — flexible plastic, common in modern builds
+[3]  GalvanizedIron   steel-blue  — older steel piping
+[4]  PE               green       — polyethylene, often used underground
+[5]  BlackPlastic     dark gray   — ABS / PVC drainage lines
+[6]  CastIron         purple-gray — heavy drain / sewer pipe
+
+Material affects only the visual color — simulation treats all materials the same.
+
+---
+
+# Tips & Workflow
+
+  • A valid simulation network needs at least one Source and one Sink connected
+    by a continuous chain of compatible pipes.
+  • Valves block flow — toggle open/closed with [V].
+  • Pressurized cells (flowing but no outlet) glow brighter than through-flow cells.
+  • Use assemblies to stamp repeated sub-systems (valve clusters, fixture rough-ins).
+  • The glyph editor lets you remap any component to a Unicode character of your choice.
+  • Use [Ctrl+Z] freely — every edit is undoable, up to 50 steps.
+  • Export to .txt with [X] to paste your diagram into documentation or share it as ASCII art.
+  • Notes support multiple lines: separate them with `|` in the text prompt.
+  • Edit this file (`help.txt`) in any text editor to add your own notes.
+    Changes take effect the next time you press [H] — no restart needed.
