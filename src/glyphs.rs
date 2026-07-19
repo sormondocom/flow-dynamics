@@ -232,13 +232,14 @@ impl CustomCompDef {
         self.ports.iter().find(|p| p.row == row && p.col == col)
     }
 
-    /// Set (or clear) a specific port type at (row, col) in extended footprint space.
+    /// Set (or clear) a specific port type at (row, col) in canvas footprint space.
+    /// Border = dc==0, dc==fw-1, dr==0, dr==fh-1.
     /// If the cell already has a port of the same kind, it is removed (toggle off).
     /// If the cell has a port of a different kind, it is replaced.
     /// Returns a short status message.
     pub fn set_port(&mut self, row: usize, col: usize, fw: usize, fh: usize, kind: PortKind) -> &'static str {
-        let on_border = (col == 1 || col == fw - 2) && row >= 1 && row <= fh - 2
-            || (row == 1 || row == fh - 2) && col >= 1 && col <= fw - 2;
+        let on_border = (col == 0 || col + 1 == fw) && row < fh
+            || (row == 0 || row + 1 == fh) && col < fw;
         if !on_border {
             return "Move cursor to the box border to add a port.";
         }
@@ -270,33 +271,74 @@ impl CustomCompDef {
 
     /// Returns (row_offset, col_offset, PortFace) from the anchor cell to each port's
     /// external connection cell (the grid cell a pipe must occupy to connect here).
-    /// Ports use extended footprint coordinates (fh = inner_h + 2, fw = inner_w + 2).
+    /// Ports use canvas footprint coordinates: dc=0 (west edge), dc=fw-1 (east edge),
+    /// dr=0 (north edge), dr=fh-1 (south edge).  composite_size = (canvas_w, canvas_h).
     pub fn port_external_offsets(&self) -> Vec<(isize, isize, PortFace)> {
-        let (inner_w, inner_h) = match self.composite_size {
+        let (canvas_w, canvas_h) = match self.composite_size {
             Some(s) => s,
             None => return vec![],
         };
-        let fw = inner_w + 2;
-        let fh = inner_h + 2;
+        let fw = canvas_w;
+        let fh = canvas_h;
         let pr = fh / 2; // effective_port_row for this composite
 
         self.ports.iter().map(|p| {
             let dr = p.row as isize;
             let dc = p.col as isize;
-            if p.col == 1 {
-                // West box border — external is one col left of entire footprint
+            if p.col == 0 {
+                // West edge — external is one col left of entire footprint
                 (dr - pr as isize, -1isize, PortFace::West)
-            } else if p.col == fw - 2 {
-                // East box border — external is one col right of entire footprint
+            } else if p.col + 1 == fw {
+                // East edge — external is one col right of entire footprint
                 (dr - pr as isize, fw as isize, PortFace::East)
-            } else if p.row == 1 {
-                // North box border — external is one row above entire footprint
+            } else if p.row == 0 {
+                // North edge — external is one row above entire footprint
                 (-(pr as isize) - 1, dc, PortFace::North)
             } else {
-                // South box border — external is one row below entire footprint
+                // South edge — external is one row below entire footprint
                 (fh as isize - pr as isize, dc, PortFace::South)
             }
         }).collect()
+    }
+
+    /// Parse a "row,col" override key — mirrors the helper in app.rs.
+    fn parse_key(key: &str) -> Option<(usize, usize)> {
+        let (r, c) = key.split_once(',')?;
+        Some((r.parse().ok()?, c.parse().ok()?))
+    }
+
+    /// Migrate a composite def from v1.0 extended coordinates (inner_w+2 footprint,
+    /// buffer ring at dc=0/dc=fw-1, port at dc=1/dc=fw-2) to v2.0 canvas coordinates
+    /// (composite_size = canvas dims directly, port at dc=0/dc=canvas_w-1).
+    pub fn migrate_v1_to_v2(&mut self) {
+        let (inner_w, inner_h) = match self.composite_size {
+            Some(s) => s,
+            None => return,
+        };
+        let fw = inner_w + 2;
+        let fh = inner_h + 2;
+
+        // Drop buffer-ring overrides (dc=0, dc=fw-1, dr=0, dr=fh-1) and shift rest by -1.
+        let old = std::mem::take(&mut self.cell_overrides);
+        for (key, val) in old {
+            if let Some((r, c)) = Self::parse_key(&key) {
+                if r == 0 || r + 1 == fh || c == 0 || c + 1 == fw { continue; }
+                self.cell_overrides.insert(Self::override_key(r - 1, c - 1), val);
+            }
+        }
+        let old_colors = std::mem::take(&mut self.cell_color_overrides);
+        for (key, val) in old_colors {
+            if let Some((r, c)) = Self::parse_key(&key) {
+                if r == 0 || r + 1 == fh || c == 0 || c + 1 == fw { continue; }
+                self.cell_color_overrides.insert(Self::override_key(r - 1, c - 1), val);
+            }
+        }
+        // Shift port positions: old dc=1 → dc=0, old dc=fw-2 → dc=fw-3 = inner_w-1 = new canvas_w-1.
+        for port in &mut self.ports {
+            port.col = port.col.saturating_sub(1);
+            port.row = port.row.saturating_sub(1);
+        }
+        // composite_size values stay the same but now mean canvas dims directly.
     }
 }
 
@@ -331,8 +373,15 @@ impl GlyphLibrary {
     pub fn load(path: &Path) -> Result<Self, String> {
         let txt = std::fs::read_to_string(path)
             .map_err(|e| format!("Cannot read '{}': {}", path.display(), e))?;
-        serde_json::from_str(&txt)
-            .map_err(|e| format!("Parse error in '{}': {}", path.display(), e))
+        let mut lib: Self = serde_json::from_str(&txt)
+            .map_err(|e| format!("Parse error in '{}': {}", path.display(), e))?;
+        if lib.version == "1.0" {
+            for def in &mut lib.custom_components {
+                def.migrate_v1_to_v2();
+            }
+            lib.version = "2.0".into();
+        }
+        Ok(lib)
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
@@ -520,6 +569,7 @@ pub fn kind_key(k: ComponentKind) -> &'static str {
         ComponentKind::SolidBlock        => "SolidBlock",
         ComponentKind::Label             => "Label",
         ComponentKind::Note              => "Note",
+        ComponentKind::Link              => "Link",
         ComponentKind::Custom            => "Custom",
     }
 }
@@ -570,6 +620,8 @@ pub struct GlyphEditorState {
     pub custom_rgb: Option<[u8; 3]>,
     /// Cursor position (row, col) within the composite footprint when editing a composite.
     pub composite_cursor: (usize, usize),
+    /// Top-left visible cell (row_off, col_off) for viewport scrolling on large composites.
+    pub composite_viewport: (usize, usize),
     pub focus: GlyphEditorFocus,
     pub status: String,
 }
@@ -584,8 +636,9 @@ impl Default for GlyphEditorState {
             color_cursor: 0,
             custom_rgb: None,
             composite_cursor: (0, 0),
+            composite_viewport: (0, 0),
             focus: GlyphEditorFocus::ComponentList,
-            status: "  [Tab] switch panel  [Enter] apply  [N] new  [W] composite width  [Del] clear cell  [S] save  [L] load  [G/Q] exit".into(),
+            status: "  [Tab] switch panel  [Enter] apply  [N] new  [R] rename  [C] copy  [W] composite  [Del] clear cell  [S] save  [L] load  [G/Q] exit".into(),
         }
     }
 }
@@ -642,13 +695,6 @@ impl GlyphEditorState {
 
     pub fn nav_kind(&mut self, delta: isize, total_len: usize) {
         self.kind_idx = (self.kind_idx as isize + delta).rem_euclid(total_len as isize) as usize;
-    }
-
-    pub fn nav_composite(&mut self, dr: isize, dc: isize, fw: usize, fh: usize) {
-        let (r, c) = self.composite_cursor;
-        let new_r = (r as isize + dr).rem_euclid(fh as isize) as usize;
-        let new_c = (c as isize + dc).rem_euclid(fw as isize) as usize;
-        self.composite_cursor = (new_r, new_c);
     }
 
     pub fn nav_char(&mut self, dr: isize, dc: isize) {

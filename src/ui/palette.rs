@@ -60,18 +60,48 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
     let hdr_len = if list_focused   { Color::Rgb(80, 140, 160)  } else { Color::Rgb(35, 65, 75) };
     let _ = colors_focused;
 
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!("    {:<width$}", "Component", width = LABEL_W),
-                Style::default().fg(hdr_fg),
-            ),
-            Span::styled("│", Style::default().fg(hdr_sep)),
-            Span::styled(" Len  ", Style::default().fg(hdr_fg)),
-            Span::styled("[L]", Style::default().fg(hdr_len)),
-        ])),
-        list_chunks[0],
-    );
+    if app.palette_search_active {
+        // ── Search bar replaces header row ────────────────────────────────────
+        let query = &app.palette_search;
+        let query_count = if query.is_empty() {
+            app.palette.len()
+        } else {
+            let q = query.to_lowercase();
+            (0..app.palette.len()).filter(|&i| app.palette_item_matches(i, &q)).count()
+        };
+        let count_text = format!(" {query_count} match");
+        let available_w = list_chunks[0].width as usize;
+        let prefix = "/ ";
+        let suffix = "│";
+        let cursor_block = "█";
+        let esc_hint = " [Esc]";
+        // Truncate query to fit in the available width
+        let max_q_w = available_w
+            .saturating_sub(prefix.len() + cursor_block.len() + count_text.len() + suffix.len() + esc_hint.len());
+        let display_q: String = query.chars().rev().take(max_q_w).collect::<String>().chars().rev().collect();
+        let search_line = Line::from(vec![
+            Span::styled(prefix, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(display_q, Style::default().fg(Color::White).bg(Color::Rgb(25, 28, 50))),
+            Span::styled(cursor_block, Style::default().fg(Color::Yellow).bg(Color::Rgb(25, 28, 50))),
+            Span::styled(count_text, Style::default().fg(Color::Rgb(100, 180, 100))),
+            Span::styled(suffix, Style::default().fg(Color::Rgb(50, 50, 50))),
+            Span::styled(esc_hint, Style::default().fg(Color::Rgb(100, 100, 100))),
+        ]);
+        f.render_widget(Paragraph::new(search_line), list_chunks[0]);
+    } else {
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    format!("    {:<width$}", "Component", width = LABEL_W),
+                    Style::default().fg(hdr_fg),
+                ),
+                Span::styled("│", Style::default().fg(hdr_sep)),
+                Span::styled(" Len  ", Style::default().fg(hdr_fg)),
+                Span::styled("[L]", Style::default().fg(hdr_len)),
+            ])),
+            list_chunks[0],
+        );
+    }
 
     let visible_h = list_chunks[1].height as usize;
     let palette_len = app.palette.len();
@@ -79,6 +109,12 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
         (app.palette_idx + 1).saturating_sub(visible_h).min(palette_len.saturating_sub(visible_h))
     } else {
         0
+    };
+
+    let search_query = if app.palette_search_active && !app.palette_search.is_empty() {
+        Some(app.palette_search.to_lowercase())
+    } else {
+        None
     };
 
     let items: Vec<ListItem> = app
@@ -102,6 +138,8 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
                 (g.symbol, kind.label(), g.fg)
             };
             let selected = i == app.palette_idx;
+            // Dim items that don't match the active search query.
+            let matches = search_query.as_ref().map(|q| app.palette_item_matches(i, q)).unwrap_or(true);
             let len_text = if matches!(kind, ComponentKind::PipeH | ComponentKind::PipeV) {
                 let in_val = (app.default_lengths.get(kind).copied().unwrap_or(1.0) * 12.0).round() as i32;
                 format!("{:>3}\"", in_val)
@@ -131,6 +169,13 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
                     } else {
                         Style::default().fg(Color::DarkGray)
                     },
+                )
+            } else if !matches {
+                // Dim non-matching items during search.
+                (
+                    Style::default().fg(Color::Rgb(45, 45, 45)),
+                    Style::default().fg(Color::Rgb(30, 30, 30)),
+                    Style::default().fg(Color::Rgb(35, 35, 35)),
                 )
             } else {
                 (

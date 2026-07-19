@@ -72,6 +72,22 @@ Within the note editor: [Arrow] moves the cursor, [Shift+Enter] inserts a line b
 and plain [Enter] confirms.  You may also type `|` as a line separator.
 When the cursor is on a placed note, [E]dit appears above the box — press [E] to reopen the editor.
 
+## Links  ⇒
+
+A Link (⇒) stores a file path to another `.json` diagram and acts as a navigation
+anchor on the canvas.  It renders as an amber framed box showing the target path.
+
+Press [Enter] while Link is selected in the Palette to open the path prompt.
+Type the path to the target diagram file and press [Enter] to place the link anchor.
+
+When the cursor is on a placed Link:
+
+[Enter]   Follow the link — loads the target diagram
+[E]       Edit the stored file path
+
+If the current diagram has unsaved content when following a link, a Save / Discard /
+Cancel dialog appears — the same one used by [N] New Diagram.
+
 ## Palette Scrolling (from Canvas focus)
 
 [[]     Scroll palette up one item
@@ -87,11 +103,20 @@ The Palette lists all available component types.  Focus it with [Tab].
 [PageUp/PageDn]   Jump 10 items at a time
 [Home]            Jump to the first component in the list
 [End]             Jump to the last component in the list
+[Enter]           Accept selection and return focus to the Canvas
 [D]               Cycle diameter for the selected component type
 [M]               Cycle material for the selected component type
 [L]               Edit pipe length  or  open Component Detail overlay
 [+] / [-]         Adjust the default pipe length for the selected type
 [1]–[6]          Select material directly
+
+## Palette Search
+
+[/]         Activate search — type any part of a component name to filter the list
+            Non-matching items dim; matching items remain at full brightness.
+[↑] / [↓]   Jump between matching items while search is active
+[Esc]        Clear search and return to normal navigation
+[Enter]      Accept current selection and return focus to the Canvas
 
 ---
 
@@ -199,6 +224,9 @@ Press [P] from Build mode to run the simulation.
 Cells that receive fluid from a Source show animated water characters.
 Pressurized (dead-end flowing) branches glow differently from through-flow ones.
 Cells with no path from a Source remain un-highlighted.
+
+Open pipe ends (flowing but unconnected) flood adjacent empty cells with animated
+`~` and `≈` water characters — making leaks and dead-ends immediately visible.
 
 A warning appears in the status bar if the network has no reachable Sink,
 or if no Source is present.
@@ -347,6 +375,13 @@ This screen.  Loaded from `help.txt` in the working directory.
 [Home]         Jump to the top of the help text
 [End]          Jump to the bottom of the help text
 [H] / [Esc]   Close this screen
+
+## Help Search
+
+[/]           Activate search — type any word or phrase to find matching lines
+              Matching lines highlight in green; the search bar appears at the bottom.
+[↑] / [↓]    Jump between matching lines while search is active
+[Esc]         Clear search
 
 Edit `help.txt` in any text editor to add your own notes.
 Changes take effect the next time you press [H] — no restart needed.

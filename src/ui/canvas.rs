@@ -91,6 +91,7 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
     {
         let label_style = Style::default().fg(Color::Rgb(255, 230, 60)).add_modifier(Modifier::BOLD);
         let note_style  = Style::default().fg(Color::Rgb(80, 220, 230)).add_modifier(Modifier::BOLD);
+        let link_style  = Style::default().fg(Color::Rgb(255, 185, 55)).add_modifier(Modifier::BOLD);
 
         let cell_empty = |r: usize, c: usize| {
             app.grid.get(r, c).is_none() && app.grid.satellite_anchor(r, c).is_none()
@@ -224,6 +225,109 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                                 }
                             }
                         }
+                        ComponentKind::Link => {
+                            let path_text = comp.text.as_deref().unwrap_or("(no path)");
+                            let text_w = path_text.chars().count();
+                            let inner_w = text_w + 2;
+                            let right_c = gc + inner_w + 1;
+
+                            // Top border: ⇒═══╗ (anchor at gc rendered by cell_char_and_style)
+                            for ci in 1..=inner_w {
+                                let col = gc + ci;
+                                if col >= vc + viewport_w || !cell_empty(gr, col) { break; }
+                                label_overlay.insert((gr, col), ('═', link_style));
+                            }
+                            if right_c < vc + viewport_w && cell_empty(gr, right_c) {
+                                label_overlay.insert((gr, right_c), ('╗', link_style));
+                            }
+
+                            // Blank padding row
+                            {
+                                let row = gr + 1;
+                                if row < vr + viewport_h {
+                                    if cell_empty(row, gc) { label_overlay.insert((row, gc), ('║', link_style)); }
+                                    for ci in 1..=inner_w {
+                                        let col = gc + ci;
+                                        if col < vc + viewport_w && cell_empty(row, col) {
+                                            label_overlay.insert((row, col), (' ', link_style));
+                                        }
+                                    }
+                                    if right_c < vc + viewport_w && cell_empty(row, right_c) {
+                                        label_overlay.insert((row, right_c), ('║', link_style));
+                                    }
+                                }
+                            }
+
+                            // Content row: ║ path ║
+                            {
+                                let row = gr + 2;
+                                if row < vr + viewport_h {
+                                    if cell_empty(row, gc) { label_overlay.insert((row, gc), ('║', link_style)); }
+                                    if gc + 1 < vc + viewport_w && cell_empty(row, gc + 1) {
+                                        label_overlay.insert((row, gc + 1), (' ', link_style));
+                                    }
+                                    let chars: Vec<char> = path_text.chars().collect();
+                                    let mut ok = true;
+                                    for ci in 0..text_w {
+                                        let col = gc + 2 + ci;
+                                        if col >= vc + viewport_w { ok = false; break; }
+                                        if !cell_empty(row, col) { ok = false; break; }
+                                        label_overlay.insert((row, col), (chars[ci], link_style));
+                                    }
+                                    let rpad = gc + text_w + 2;
+                                    if ok && rpad < vc + viewport_w && cell_empty(row, rpad) {
+                                        label_overlay.insert((row, rpad), (' ', link_style));
+                                    }
+                                    if ok && right_c < vc + viewport_w && cell_empty(row, right_c) {
+                                        label_overlay.insert((row, right_c), ('║', link_style));
+                                    }
+                                }
+                            }
+
+                            // Blank padding row
+                            {
+                                let row = gr + 3;
+                                if row < vr + viewport_h {
+                                    if cell_empty(row, gc) { label_overlay.insert((row, gc), ('║', link_style)); }
+                                    for ci in 1..=inner_w {
+                                        let col = gc + ci;
+                                        if col < vc + viewport_w && cell_empty(row, col) {
+                                            label_overlay.insert((row, col), (' ', link_style));
+                                        }
+                                    }
+                                    if right_c < vc + viewport_w && cell_empty(row, right_c) {
+                                        label_overlay.insert((row, right_c), ('║', link_style));
+                                    }
+                                }
+                            }
+
+                            // Bottom border: ╚════╝
+                            let bot_row = gr + 4;
+                            if bot_row < vr + viewport_h {
+                                if cell_empty(bot_row, gc) { label_overlay.insert((bot_row, gc), ('╚', link_style)); }
+                                let mut ok = true;
+                                for ci in 1..=inner_w {
+                                    let col = gc + ci;
+                                    if col >= vc + viewport_w { ok = false; break; }
+                                    if !cell_empty(bot_row, col) { ok = false; break; }
+                                    label_overlay.insert((bot_row, col), ('═', link_style));
+                                }
+                                if ok && right_c < vc + viewport_w && cell_empty(bot_row, right_c) {
+                                    label_overlay.insert((bot_row, right_c), ('╝', link_style));
+                                }
+                            }
+
+                            // [Enter]/[E] hint above anchor when cursor is here.
+                            if app.cursor == (gr, gc) && gr > vr {
+                                let hint_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                                for (hi, ch) in ['[', 'E', ']', 'e', 'd', 'i', 't', ' ', 'p', 'a', 't', 'h'].iter().enumerate() {
+                                    let col = gc + hi;
+                                    if col < vc + viewport_w {
+                                        label_overlay.insert((gr - 1, col), (*ch, hint_style));
+                                    }
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -339,6 +443,69 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                         }
                     }
                 }
+                ComponentKind::Link => {
+                    let text_w = text.chars().count();
+                    let inner_w = text_w + 2;
+                    let right_c = cc + inner_w + 1;
+                    // Top border
+                    for ci in 1..=inner_w {
+                        let col = cc + ci;
+                        if col >= vc + viewport_w || !cell_empty(cr, col) { break; }
+                        label_overlay.insert((cr, col), ('═', link_style));
+                    }
+                    if right_c < vc + viewport_w && cell_empty(cr, right_c) {
+                        label_overlay.insert((cr, right_c), ('╗', link_style));
+                    }
+                    // Blank, content, blank, bottom
+                    for (dy, kind_ch) in [(1usize, None), (2, Some(text)), (3usize, None)] {
+                        let row = cr + dy;
+                        if row >= vr + viewport_h { break; }
+                        if cell_empty(row, cc) { label_overlay.insert((row, cc), ('║', link_style)); }
+                        if let Some(content) = kind_ch {
+                            if cc + 1 < vc + viewport_w && cell_empty(row, cc + 1) {
+                                label_overlay.insert((row, cc + 1), (' ', link_style));
+                            }
+                            let mut ok = true;
+                            for (ci, ch) in content.chars().enumerate() {
+                                let col = cc + 2 + ci;
+                                if col >= vc + viewport_w { ok = false; break; }
+                                if !cell_empty(row, col) { ok = false; break; }
+                                label_overlay.insert((row, col), (ch, link_style));
+                            }
+                            let rpad = cc + text_w + 2;
+                            if ok && rpad < vc + viewport_w && cell_empty(row, rpad) {
+                                label_overlay.insert((row, rpad), (' ', link_style));
+                            }
+                            if ok && right_c < vc + viewport_w && cell_empty(row, right_c) {
+                                label_overlay.insert((row, right_c), ('║', link_style));
+                            }
+                        } else {
+                            for ci in 1..=inner_w {
+                                let col = cc + ci;
+                                if col < vc + viewport_w && cell_empty(row, col) {
+                                    label_overlay.insert((row, col), (' ', link_style));
+                                }
+                            }
+                            if right_c < vc + viewport_w && cell_empty(row, right_c) {
+                                label_overlay.insert((row, right_c), ('║', link_style));
+                            }
+                        }
+                    }
+                    let bot_row = cr + 4;
+                    if bot_row < vr + viewport_h {
+                        if cell_empty(bot_row, cc) { label_overlay.insert((bot_row, cc), ('╚', link_style)); }
+                        let mut ok = true;
+                        for ci in 1..=inner_w {
+                            let col = cc + ci;
+                            if col >= vc + viewport_w { ok = false; break; }
+                            if !cell_empty(bot_row, col) { ok = false; break; }
+                            label_overlay.insert((bot_row, col), ('═', link_style));
+                        }
+                        if ok && right_c < vc + viewport_w && cell_empty(bot_row, right_c) {
+                            label_overlay.insert((bot_row, right_c), ('╝', link_style));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -363,13 +530,35 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                     if grid_row >= cr && grid_col >= cc {
                         let ar = grid_row - cr;
                         let ac = grid_col - cc;
+                        let ghost_style = Style::default()
+                            .fg(Color::Rgb(100, 130, 190))
+                            .bg(Color::Rgb(18, 22, 38));
                         if let Some(comp) = asm.get(ar, ac) {
-                            let g = app.glyph_registry
-                                .resolve(comp.kind, comp.material, comp.diameter);
-                            let style = Style::default()
-                                .fg(Color::Rgb(g.fg[0] / 2, g.fg[1] / 2, g.fg[2] / 2 + 60))
-                                .bg(Color::Rgb(20, 10, 50));
-                            spans.push(Span::styled(g.symbol.to_string(), style));
+                            let ch = match comp.kind {
+                                crate::components::ComponentKind::Label => '[',
+                                crate::components::ComponentKind::Note  => '*',
+                                crate::components::ComponentKind::Link  => '⇒',
+                                _ if comp.effective_is_composite() => {
+                                    let (fw, fh) = comp.effective_footprint();
+                                    let pr = comp.effective_port_row();
+                                    let label = comp.effective_composite_label();
+                                    let (_, _, ae, aw) = comp.connections();
+                                    super::composite_box_char(fw, fh, pr, pr, 0, label, None, ae || aw)
+                                }
+                                _ => {
+                                    let g = app.glyph_registry.resolve(comp.kind, comp.material, comp.diameter);
+                                    g.symbol
+                                }
+                            };
+                            spans.push(Span::styled(ch.to_string(), ghost_style));
+                            continue;
+                        }
+                        if let Some(ch) = asm.annotation_ghost_char(ar, ac) {
+                            spans.push(Span::styled(ch.to_string(), ghost_style));
+                            continue;
+                        }
+                        if let Some(ch) = asm.composite_ghost_char(ar, ac) {
+                            spans.push(Span::styled(ch.to_string(), ghost_style));
                             continue;
                         }
                     }
@@ -379,15 +568,25 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
             // ── Selection highlight ───────────────────────────────────────
             if let Some((r0, c0, r1, c1)) = sel_rect {
                 if grid_row >= r0 && grid_row <= r1 && grid_col >= c0 && grid_col <= c1 {
-                    let (ch, mut style) = cell_char_and_style(app, grid_row, grid_col, effective_cursor);
                     let is_edge = grid_row == r0 || grid_row == r1
                         || grid_col == c0 || grid_col == c1;
-                    style = if is_edge {
-                        style.bg(Color::Rgb(40, 60, 20))
+                    let sel_bg = if is_edge {
+                        Color::Rgb(40, 60, 20)
                     } else {
-                        style.bg(Color::Rgb(20, 35, 10))
+                        Color::Rgb(20, 35, 10)
                     };
-                    spans.push(Span::styled(ch.to_string(), style));
+                    // For empty overlay cells (label/note text), preserve the annotation
+                    // character and tint it so it remains readable through the selection.
+                    let is_grid_empty = app.grid.get(grid_row, grid_col).is_none()
+                        && app.grid.satellite_anchor(grid_row, grid_col).is_none();
+                    if is_grid_empty {
+                        if let Some(&(lch, lstyle)) = label_overlay.get(&(grid_row, grid_col)) {
+                            spans.push(Span::styled(lch.to_string(), lstyle.bg(sel_bg)));
+                            continue;
+                        }
+                    }
+                    let (ch, style) = cell_char_and_style(app, grid_row, grid_col, effective_cursor);
+                    spans.push(Span::styled(ch.to_string(), style.bg(sel_bg)));
                     continue;
                 }
             }
@@ -415,6 +614,8 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled(lch.to_string(), lstyle)
                 } else if let Some(&(ach, astyle)) = annotations.get(&(grid_row, grid_col)) {
                     Span::styled(ach.to_string(), astyle)
+                } else if let Some((fch, fstyle)) = flood_cell(app, grid_row, grid_col) {
+                    Span::styled(fch.to_string(), fstyle)
                 } else {
                     Span::styled("·".to_string(), Style::default().fg(Color::Rgb(35, 35, 35)))
                 }
@@ -474,6 +675,56 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
             );
         }
     }
+}
+
+/// Returns an animated "water leak" character and style for an empty cell that
+/// is adjacent to a flowing pipe component with an open (unconnected) end toward it.
+fn flood_cell(app: &App, gr: usize, gc: usize) -> Option<(char, Style)> {
+    let sim = app.sim_result.as_ref()?;
+    // connections() returns (N=0, S=1, E=2, W=3)
+    // For each direction d, check the neighbor at (gr+dr, gc+dc).
+    // The neighbor must have its opposite-facing connection set to true.
+    let checks: &[(i32, i32, usize)] = &[
+        (-1, 0, 1), // N neighbor — its S connection (idx 1) points toward (gr,gc)
+        ( 1, 0, 0), // S neighbor — its N connection (idx 0)
+        ( 0,-1, 2), // W neighbor — its E connection (idx 2)
+        ( 0, 1, 3), // E neighbor — its W connection (idx 3)
+    ];
+    for &(dr, dc, conn_idx) in checks {
+        let nr = gr as i32 + dr;
+        let nc = gc as i32 + dc;
+        if nr < 0 || nc < 0 { continue; }
+        let (nr, nc) = (nr as usize, nc as usize);
+        if nr >= app.grid.height || nc >= app.grid.width { continue; }
+        // Resolve satellite to anchor for component + flow lookup.
+        let (ar, ac) = app.grid.satellite_anchor(nr, nc).unwrap_or((nr, nc));
+        let Some(comp) = app.grid.get(ar, ac) else { continue };
+        // Skip all composites (built-in and custom) — composite borders are vessel walls,
+        // not pipe openings. effective_is_composite() catches Custom composites too.
+        if comp.effective_is_composite() { continue; }
+        // Skip sealed passive terminals (gauge, endcap) — they cap or monitor the pipe
+        // but don't have an open orifice that water would spray from.
+        if comp.kind.is_sealed_terminal() { continue; }
+        // Only flood from Pressurized cells (the BFS dead-end state).
+        // Flowing cells are inline components with at least one connected neighbor;
+        // their unused connection faces are not open pipe ends.
+        // Pressurized = reached from Source but never propagated onward → true open end.
+        if sim.cell_states.get(&(ar, ac)) != Some(&FlowState::Pressurized) { continue; }
+        let conns = comp.connections();
+        let conn_arr = [conns.0, conns.1, conns.2, conns.3];
+        if conn_arr[conn_idx] {
+            // Stagger phase per cell so not all flood cells pulse in sync.
+            let phase = (app.tick as usize)
+                .wrapping_add(gr.wrapping_mul(3))
+                .wrapping_add(gc.wrapping_mul(7)) % 4;
+            let ch = ['~', '≈', '~', ' '][phase];
+            let style = Style::default()
+                .fg(Color::Rgb(55, 140, 255))
+                .bg(Color::Rgb(0, 15, 45));
+            return Some((ch, style));
+        }
+    }
+    None
 }
 
 fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (char, Style) {
@@ -545,6 +796,16 @@ fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (c
             Style::default().fg(Color::Rgb(80, 220, 230)).add_modifier(Modifier::BOLD)
         };
         return ('*', style);
+    }
+
+    // ── Link anchor — shows '⇒'; overlay pre-pass fills the box ───────────
+    if comp.kind == ComponentKind::Link {
+        let style = if is_cursor {
+            Style::default().bg(Color::Rgb(45, 25, 0)).fg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Rgb(255, 185, 55)).add_modifier(Modifier::BOLD)
+        };
+        return ('⇒', style);
     }
 
     // ── Composite anchor (W port / left border char at dr=port_row, dc=0) ──
@@ -621,7 +882,19 @@ fn cell_appearance(
                         let slow_tick = (app.tick / 4) as usize;
                         let move_frame = (app.tick / 2) as usize;
                         let pos = flow_pos(comp.kind, row, col);
-                        let phase = (pos + period - move_frame % period) % period;
+                        let flow_dir = sim.flow_dirs.get(&(row, col)).copied().unwrap_or((0, 0));
+                        let reversed = match comp.kind {
+                            ComponentKind::PipeH | ComponentKind::BallValveH
+                            | ComponentKind::CheckValveH | ComponentKind::Reducer => flow_dir.1 < 0,
+                            ComponentKind::PipeV | ComponentKind::BallValveV
+                            | ComponentKind::CheckValveV => flow_dir.0 < 0,
+                            _ => false,
+                        };
+                        let phase = if reversed {
+                            (pos + move_frame % period) % period
+                        } else {
+                            (pos + period - move_frame % period) % period
+                        };
                         let pipe_color = scale_rgb(
                             mr, mg, mb,
                             if gpm > 5.0 { 1.35 } else if gpm > 2.0 { 1.1 } else { 0.85 },
@@ -748,26 +1021,21 @@ fn cell_override_or_default(
     label: &str,
 ) -> char {
     if let Some(id) = &comp.custom_id {
-        // Custom composite: fw/fh are extended (inner+2). Coords are in extended space.
+        // Custom composite: fw/fh are canvas dims (composite_size), coords are 0-based canvas coords.
         let customs = app.glyph_registry.custom_components();
         if let Some(def) = customs.iter().find(|d| &d.id == id) {
             if let Some(ch) = def.get_cell(dr, dc) {
                 return ch;
             }
-            // Port cells override default box chars — character direction reflects port kind.
-            if let Some(port) = def.get_port_at(dr, dc) {
-                use crate::glyphs::PortKind;
-                let inlet = matches!(port.kind, PortKind::Inlet);
-                return if dc == 1           { if inlet { '╣' } else { '╠' } }
-                    else if dc + 2 == fw    { if inlet { '╠' } else { '╣' } }
-                    else if dr == 1         { if inlet { '╩' } else { '╦' } }
-                    else                    { if inlet { '╦' } else { '╩' } };
+            // Port cells — face outward toward their pipe.
+            if def.get_port_at(dr, dc).is_some() {
+                return if dc == 0        { '╣' }  // West edge  → opens left
+                    else if dc + 1 == fw { '╠' }  // East edge  → opens right
+                    else if dr == 0      { '╩' }  // North edge → opens up
+                    else                 { '╦' }; // South edge → opens down
             }
         }
-        if dr == 0 || dr + 1 == fh || dc == 0 || dc + 1 == fw {
-            return ' ';
-        }
-        return composite_box_char(fw - 2, fh - 2, port_row.saturating_sub(1), dr - 1, dc - 1, label, None, true);
+        return composite_box_char(fw, fh, port_row, dr, dc, label, None, true);
     }
     let (ae, aw) = { let (_, _, e, w) = comp.kind.connections(); (e, w) };
     let side_ports = ae || aw;
@@ -1017,9 +1285,7 @@ fn composite_ghost_cell(app: &App, row: usize, col: usize) -> Option<(char, Styl
         let customs = app.glyph_registry.custom_components();
         let ci = app.selected_custom_idx()?;
         let def = customs.get(ci)?;
-        let (inner_fw, inner_fh) = def.composite_size?;
-        let fw = inner_fw + 2;
-        let fh = inner_fh + 2;
+        let (fw, fh) = def.composite_size?;  // canvas dims directly (v2.0, no implicit buffer)
         let port_row = fh / 2;
         let dr_i = row as isize - cursor_r as isize + port_row as isize;
         let dc_i = col as isize - cursor_c as isize;
@@ -1027,10 +1293,13 @@ fn composite_ghost_cell(app: &App, row: usize, col: usize) -> Option<(char, Styl
         let (dr, dc) = (dr_i as usize, dc_i as usize);
         if dr >= fh || dc >= fw { return None; }
         let label = def.label.as_str();
-        let ch = def.get_cell(dr, dc).unwrap_or_else(|| {
-            if dr == 0 || dr + 1 == fh || dc == 0 || dc + 1 == fw { ' ' }
-            else { composite_box_char(fw - 2, fh - 2, port_row.saturating_sub(1), dr - 1, dc - 1, label, None, true) }
-        });
+        let ch = if let Some(ch) = def.get_cell(dr, dc) {
+            ch
+        } else if def.get_port_at(dr, dc).is_some() {
+            if dc == 0 { '╣' } else if dc + 1 == fw { '╠' } else if dr == 0 { '╩' } else { '╦' }
+        } else {
+            composite_box_char(fw, fh, port_row, dr, dc, label, None, true)
+        };
         return Some((ch, ghost_style(dr == port_row && dc == 0)));
     }
 

@@ -144,9 +144,9 @@ fn handle_key(
             KeyCode::Down  if app.is_note_text_mode()  => app.note_move_down(),
             KeyCode::Left  if app.is_note_text_mode()  => app.note_move_left(),
             KeyCode::Right if app.is_note_text_mode()  => app.note_move_right(),
-            // Left/Right navigate within the label input field.
-            KeyCode::Left  if app.is_label_text_mode() => app.label_move_left(),
-            KeyCode::Right if app.is_label_text_mode() => app.label_move_right(),
+            // Left/Right navigate within the label / link-path input fields.
+            KeyCode::Left  if app.is_label_text_mode() || app.is_link_path_mode() => app.label_move_left(),
+            KeyCode::Right if app.is_label_text_mode() || app.is_link_path_mode() => app.label_move_right(),
             KeyCode::Char(ch)  => app.push_input_char(ch),
             _ => {}
         }
@@ -165,18 +165,52 @@ fn handle_key(
         return;
     }
 
+    // ── Search short-circuits ─────────────────────────────────────────────────
+    // When palette or help search is active, route all keys directly to their
+    // handler BEFORE any global letter hotkeys ('c', 'h', 'n', 'q', etc.) can
+    // intercept them.
+    if app.focus == Focus::Palette && app.palette_search_active {
+        let shift = modifiers.contains(KeyModifiers::SHIFT);
+        handle_palette_key(app, code, shift);
+        return;
+    }
+    if app.mode == AppMode::Help && app.help_search_active {
+        match code {
+            KeyCode::Esc => {
+                app.help_search_active = false;
+                app.help_search.clear();
+            }
+            KeyCode::Backspace => {
+                app.help_search.pop();
+                app.help_search_jump_first();
+            }
+            KeyCode::Up | KeyCode::PageUp   => app.help_search_prev(),
+            KeyCode::Down | KeyCode::PageDown => app.help_search_next(),
+            KeyCode::Char(ch) => {
+                app.help_search.push(ch);
+                app.help_search_jump_first();
+            }
+            _ => {}
+        }
+        return;
+    }
+
     // C — open settings screen.
+    // Excluded modes (GlyphEditor, ExportDialog, AnnotationDialog, FileDialog,
+    // ConfirmNew, ConfirmQuit) handle 'c' themselves — fall through to their handlers.
     if code == KeyCode::Char('c') && !modifiers.contains(KeyModifiers::CONTROL) {
         if app.mode == AppMode::Settings {
             app.close_settings();
+            return;
         } else if !matches!(
             app.mode,
             AppMode::FileDialog | AppMode::ConfirmNew | AppMode::ConfirmQuit
             | AppMode::GlyphEditor | AppMode::ExportDialog | AppMode::AnnotationDialog
         ) {
             app.open_settings();
+            return;
         }
-        return;
+        // Fall through — mode-specific handler will see 'c'.
     }
 
     // Settings screen intercepts all keys.
@@ -195,8 +229,14 @@ fn handle_key(
         return;
     }
 
-    // Help screen intercepts scroll and close keys.
+    // Help screen intercepts scroll and close keys (search is handled earlier).
     if app.mode == AppMode::Help {
+        // [/] activates search.
+        if code == KeyCode::Char('/') {
+            app.help_search_active = true;
+            app.help_search.clear();
+            return;
+        }
         match code {
             KeyCode::Up       => app.help_scroll_up(1),
             KeyCode::Down     => app.help_scroll_down(1),
@@ -210,6 +250,7 @@ fn handle_key(
     }
 
     // Confirm-new dialog: S=save+new, D=discard+new, C/Esc=cancel, arrows select.
+    // Also used when following a Link — pending_link_path distinguishes the two flows.
     if app.mode == AppMode::ConfirmNew {
         match code {
             KeyCode::Up => {
@@ -222,18 +263,46 @@ fn handle_key(
                 match app.confirm_new_choice {
                     0 => {
                         use crate::file_dialog::{FileDialogMode, FileDialogPurpose};
-                        app.open_file_dialog(FileDialogMode::Save, FileDialogPurpose::SaveThenNew);
+                        let purpose = if app.pending_link_path.is_some() {
+                            FileDialogPurpose::SaveThenFollowLink
+                        } else {
+                            FileDialogPurpose::SaveThenNew
+                        };
+                        app.open_file_dialog(FileDialogMode::Save, purpose);
                     }
-                    1 => app.do_new_diagram(),
-                    _ => app.mode = AppMode::Build,
+                    1 => {
+                        if app.pending_link_path.is_some() {
+                            app.do_follow_link();
+                        } else {
+                            app.do_new_diagram();
+                        }
+                    }
+                    _ => {
+                        app.pending_link_path = None;
+                        app.mode = AppMode::Build;
+                    }
                 }
             }
             KeyCode::Char('s') | KeyCode::Char('S') => {
                 use crate::file_dialog::{FileDialogMode, FileDialogPurpose};
-                app.open_file_dialog(FileDialogMode::Save, FileDialogPurpose::SaveThenNew);
+                let purpose = if app.pending_link_path.is_some() {
+                    FileDialogPurpose::SaveThenFollowLink
+                } else {
+                    FileDialogPurpose::SaveThenNew
+                };
+                app.open_file_dialog(FileDialogMode::Save, purpose);
             }
-            KeyCode::Char('d') | KeyCode::Char('D') => app.do_new_diagram(),
-            _ => app.mode = AppMode::Build, // C, Esc, any other key = cancel
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                if app.pending_link_path.is_some() {
+                    app.do_follow_link();
+                } else {
+                    app.do_new_diagram();
+                }
+            }
+            _ => {
+                app.pending_link_path = None;
+                app.mode = AppMode::Build;
+            }
         }
         return;
     }
@@ -338,19 +407,19 @@ fn handle_key(
         return;
     }
 
-    // Selection mode — arrow keys extend the rect, Enter/R saves, Esc cancels.
+    // Selection mode — arrows extend rect; C=copy, X=move, Enter/R=save-assembly, Esc=cancel.
     if app.mode == AppMode::Selecting {
-        let shift = modifiers.contains(KeyModifiers::SHIFT);
         match code {
             KeyCode::Up    => app.move_cursor(-1, 0, canvas_h, canvas_w),
             KeyCode::Down  => app.move_cursor(1, 0, canvas_h, canvas_w),
             KeyCode::Left  => app.move_cursor(0, -1, canvas_h, canvas_w),
             KeyCode::Right => app.move_cursor(0, 1, canvas_h, canvas_w),
+            KeyCode::Char('c') | KeyCode::Char('C') => app.copy_selection(),
+            KeyCode::Char('x') | KeyCode::Char('X') => app.move_selection(),
             KeyCode::Enter | KeyCode::Char('r') | KeyCode::Char('R') => app.confirm_selection(),
             KeyCode::Esc   | KeyCode::Char('q') | KeyCode::Char('Q') => app.cancel_selection(),
             _ => {}
         }
-        let _ = shift;
         return;
     }
 
@@ -430,13 +499,13 @@ fn handle_key(
         return;
     }
 
-    // R — start rectangle selection for saving as assembly.
+    // R — start rectangle selection (then C=copy, X=move, Enter=save-as-assembly).
     if code == KeyCode::Char('r') || code == KeyCode::Char('R') {
         app.start_selecting();
         return;
     }
 
-    // Y — open assembly browser.
+    // Y — open assembly browser (browse & stamp saved assemblies).
     if code == KeyCode::Char('y') || code == KeyCode::Char('Y') {
         app.enter_assembly_browser();
         return;
@@ -494,6 +563,11 @@ fn handle_key(
 
     // Tab cycles focus: Canvas → Palette (component list) → PaletteColors (material/color) → Canvas
     if code == KeyCode::Tab {
+        // Clear palette search when leaving palette focus.
+        if matches!(app.focus, Focus::Palette) {
+            app.palette_search_active = false;
+            app.palette_search.clear();
+        }
         app.focus = match app.focus {
             Focus::Canvas        => Focus::Palette,
             Focus::Palette       => Focus::PaletteColors,
@@ -528,10 +602,17 @@ fn handle_canvas_key(
             if app.pending_annotation.is_some() {
                 app.place_pending_annotation();
             } else {
-                match app.selected_component_kind() {
-                    ComponentKind::Label => app.begin_label_placement(),
-                    ComponentKind::Note  => app.begin_note_placement(),
-                    _                    => app.place_component(),
+                let (r, c) = app.cursor;
+                // Enter on a placed Link follows it rather than editing.
+                if app.grid.get(r, c).map(|co| co.kind == ComponentKind::Link).unwrap_or(false) {
+                    app.follow_link_at_cursor();
+                } else {
+                    match app.selected_component_kind() {
+                        ComponentKind::Label => app.begin_label_placement(),
+                        ComponentKind::Note  => app.begin_note_placement(),
+                        ComponentKind::Link  => app.begin_link_placement(),
+                        _                    => app.place_component(),
+                    }
                 }
             }
         }
@@ -556,8 +637,9 @@ fn handle_canvas_key(
         }
         KeyCode::Char('l') | KeyCode::Char('L') => app.begin_length_edit(),
         KeyCode::Char('t') | KeyCode::Char('T') => app.cycle_drain_type_at_cursor(),
-        KeyCode::Char('i') => app.adjust_source_pressure_at_cursor(10.0),
-        KeyCode::Char('I') => app.adjust_source_pressure_at_cursor(-10.0),
+        KeyCode::Char('i') => app.adjust_source_pressure_at_cursor(1.0),
+        KeyCode::Char('I') => app.adjust_source_pressure_at_cursor(-1.0),
+        KeyCode::Char('p') | KeyCode::Char('P') => app.begin_source_pressure_dialog(),
         KeyCode::Char('[') => app.palette_up(),
         KeyCode::Char(']') => app.palette_down(),
         KeyCode::Char('e') | KeyCode::Char('E') => {
@@ -565,6 +647,7 @@ fn handle_canvas_key(
             match app.grid.get(r, c).map(|co| co.kind) {
                 Some(ComponentKind::Label) => app.begin_label_placement(),
                 Some(ComponentKind::Note)  => app.begin_note_placement(),
+                Some(ComponentKind::Link)  => app.begin_link_placement(),
                 _ => {}
             }
         }
@@ -573,6 +656,40 @@ fn handle_canvas_key(
 }
 
 fn handle_palette_key(app: &mut App, code: KeyCode, shift: bool) {
+    // ── Search mode intercepts most keys ──────────────────────────────────────
+    if app.palette_search_active {
+        match code {
+            KeyCode::Esc => {
+                app.palette_search_active = false;
+                app.palette_search.clear();
+            }
+            KeyCode::Enter => {
+                app.palette_search_active = false;
+                app.palette_search.clear();
+                app.focus = Focus::Canvas;
+            }
+            KeyCode::Backspace => {
+                app.palette_search.pop();
+                app.palette_search_jump_first();
+            }
+            KeyCode::Down => app.palette_search_next(),
+            KeyCode::Up   => app.palette_search_prev(),
+            KeyCode::Char(ch) => {
+                app.palette_search.push(ch);
+                app.palette_search_jump_first();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // [/] activates search.
+    if code == KeyCode::Char('/') {
+        app.palette_search_active = true;
+        app.palette_search.clear();
+        return;
+    }
+
     match code {
         // Enter returns focus to the canvas — pick a component, press Enter, keep building.
         KeyCode::Enter => { app.focus = Focus::Canvas; }
@@ -640,6 +757,15 @@ fn handle_settings_key(app: &mut App, code: KeyCode) {
 }
 
 fn handle_glyph_editor_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
+    // Intercept all keys while a delete confirmation is pending.
+    if app.editor_pending_delete.is_some() {
+        match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => app.editor_confirm_delete_comp(),
+            _ => app.editor_cancel_delete_comp(),
+        }
+        return;
+    }
+
     match code {
         // Exit glyph editor
         KeyCode::Char('q') | KeyCode::Char('Q')
@@ -674,10 +800,20 @@ fn handle_glyph_editor_key(app: &mut App, code: KeyCode, _modifiers: KeyModifier
         KeyCode::Char('e') | KeyCode::Char('E') => app.editor_begin_custom_rgb(),
         // Define a new custom component using current char + color
         KeyCode::Char('n') | KeyCode::Char('N') => app.editor_begin_new_comp(),
+        // Rename the currently selected custom component
+        KeyCode::Char('r') | KeyCode::Char('R') => app.editor_begin_rename_comp(),
+        // Duplicate the selected custom component as a new template
+        KeyCode::Char('c') | KeyCode::Char('C') => app.editor_begin_copy_comp(),
         // Set composite width for the selected custom component
         KeyCode::Char('w') | KeyCode::Char('W') => app.editor_begin_set_composite_width(),
-        // Clear the tile under the composite cursor
-        KeyCode::Delete | KeyCode::Backspace => app.editor_clear_composite_cell(),
+        // Del/Bsp: delete custom component when list is focused, clear composite cell otherwise
+        KeyCode::Delete | KeyCode::Backspace => {
+            if app.editor.focus == GlyphEditorFocus::ComponentList {
+                app.editor_delete_custom_comp();
+            } else {
+                app.editor_clear_composite_cell();
+            }
+        }
         // Port placement — direct type selection on box border cells
         KeyCode::Char('i') | KeyCode::Char('I') => app.editor_set_port(PortKind::Inlet),
         KeyCode::Char('o') | KeyCode::Char('O') => app.editor_set_port(PortKind::Outlet),

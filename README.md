@@ -35,13 +35,16 @@
 ## Features
 
 - **Live simulation** — pressure and GPM propagate through your network in real time
+- **Flood animation** — open pipe ends leak animated `~`/`≈` water characters into adjacent empty cells during simulation, making dead-ends and unfinished runs immediately visible
 - **Full pipe set** — straight runs, elbows, tees, crosses, reducers, ball valves, check valves, endcaps, gauges
 - **Fixture components** — Toilet, Faucet/Sink, Basin Sink (with overflow animation), Water Heater, Water Softener, Whole House Filter (⊞), Sediment Filter (⊟), UV Filter (⊕), Pressure Gauge (⊙)
-- **Annotations** — inline Labels and multi-line framed Notes placed directly on the canvas
+- **Annotations** — inline Labels, multi-line framed Notes, and Diagram Links (⇒) placed directly on the canvas
+- **Diagram links** — Link (⇒) components store a path to another `.json` layout; press `Enter` on a placed link to follow it (prompts to save first if needed)
 - **Assembly system** — save any region as a named assembly and stamp it anywhere
 - **Glyph editor** — remap any component's character and color; design fully custom multi-cell composites with inlet/outlet/drain ports
 - **Undo / Redo** — every edit is undoable, up to 50 steps (Ctrl+Z / Ctrl+Y)
 - **Export** — dump the canvas as a UTF-8 text file or JSON layout
+- **Search** — press `/` in the palette to filter components by name; press `/` in help to search the help text
 - **Materials** — Copper, PEX, GalvanizedIron, PE, BlackPlastic, CastIron — each color-coded
 - **Settings** — persistent config with auto-loadable glyph library files
 - **Custom splash screen** — save any layout as `splash.json` for a live animated boot screen
@@ -112,7 +115,7 @@ Requires Rust 1.75+ and a terminal that supports Unicode and 256 colors
 |-----|--------|
 | `Arrow keys` | Move cursor |
 | `Home` / `End` | Jump to first / last component |
-| `Enter` | Place component |
+| `Enter` | Place component (on a Link: follow it) |
 | `Del` | Delete component at cursor |
 | `V` | Toggle valve open/closed |
 | `M` | Cycle material |
@@ -121,9 +124,21 @@ Requires Rust 1.75+ and a terminal that supports Unicode and 256 colors
 | `+` / `-` | Adjust pipe length (Shift = ±6 in) |
 | `I` / `Shift+I` | Increase / decrease source pressure |
 | `L` | Enter exact pipe length |
-| `E` | Edit label or note at cursor |
+| `E` | Edit label, note, or link path at cursor |
 
-### All Lists (Palette, File Browser, Assembly Browser, etc.)
+### Palette (component list)
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move one item |
+| `PageUp` / `PageDown` | Jump 10 items |
+| `Home` / `End` | Jump to first / last item |
+| `/` | Activate search — type to filter by name |
+| `↑` / `↓` *(search active)* | Jump between matching items |
+| `Esc` *(search active)* | Clear search |
+| `Enter` | Accept selection, return focus to Canvas |
+
+### All Other Lists (File Browser, Assembly Browser, etc.)
 
 | Key | Action |
 |-----|--------|
@@ -133,16 +148,19 @@ Requires Rust 1.75+ and a terminal that supports Unicode and 256 colors
 
 ---
 
-## Annotations
+## Annotations & Links
 
-Place a **Label** or **Note** from the palette, then press `Enter` to type your text.
+Place a **Label**, **Note**, or **Link** from the palette, then press `Enter` to type your text or path.
 
 - **Labels** — single-line text that spreads across empty canvas cells in bright yellow
 - **Notes** — multi-line text in a double-line framed box. In the note editor, arrow keys
   move the cursor, `Shift+Enter` inserts a line break, and `Enter` confirms. You may also
   type `|` as a line separator. An `[E]dit` hint appears when your cursor is on the box.
+- **Links** ⇒ — amber anchor that stores a path to another `.json` diagram. Press `Enter`
+  on a placed link to load the target file (prompts to save first if the canvas has content).
+  Press `E` to edit the stored path.
 
-Both annotation types are excluded from the simulation and BOM.
+All three annotation types are excluded from the simulation and BOM.
 
 ---
 
@@ -196,6 +214,22 @@ entirely new multi-cell composites with directional ports:
 | `Q` / `G` | Exit the glyph editor |
 
 Custom components participate fully in simulation — their ports define how fluid flows through them.
+
+---
+
+## Help Screen Search
+
+Press `/` while the help screen is open to search the help text.
+
+| Key | Action |
+|-----|--------|
+| `/` | Activate search |
+| Any character | Append to search query |
+| `↑` / `↓` | Jump between matching lines |
+| `Backspace` | Delete last character |
+| `Esc` | Clear search |
+
+Matching lines are highlighted in green. The search bar appears at the bottom of the help overlay.
 
 ---
 

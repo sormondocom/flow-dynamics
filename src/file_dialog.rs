@@ -13,6 +13,7 @@ pub enum FileDialogPurpose {
     LoadLayout,
     SaveThenNew,
     SaveThenQuit,
+    SaveThenFollowLink,
     ExportText,
     ExportJson,
 }

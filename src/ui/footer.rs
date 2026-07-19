@@ -49,7 +49,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         // Line 2 – properties / length edit overlay
         let prop_line = match comp.kind {
             ComponentKind::Source => format!(
-                "Inlet pressure: {:.0} PSI   [I] +10 PSI  [Shift+I] -10 PSI",
+                "Inlet pressure: {:.1} PSI   [i] +1  [I] -1  [P] enter exact",
                 comp.source_pressure_psi
             ),
             ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet
@@ -58,6 +58,10 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 comp.drain_type.label()
             ),
             ComponentKind::SolidBlock => "Structural element — no plumbing connections.".to_string(),
+            ComponentKind::Link => {
+                let path = comp.text.as_deref().unwrap_or("(no path set)");
+                format!("⇒ {path}   [Enter] follow  [E] edit path")
+            }
             ComponentKind::PipeH | ComponentKind::PipeV => {
                 let in_total = comp.pipe_length * 12.0;
                 let whole_in = in_total.floor() as i32;

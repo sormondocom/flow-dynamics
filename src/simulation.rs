@@ -39,6 +39,8 @@ pub struct NodeFlowData {
 pub struct SimResult {
     pub cell_states: HashMap<(usize, usize), FlowState>,
     pub flow_data: HashMap<(usize, usize), NodeFlowData>,
+    /// Flow direction into each cell: (dr, dc) from upstream neighbor (-1/0/1 each).
+    pub flow_dirs: HashMap<(usize, usize), (i8, i8)>,
     pub warnings: Vec<String>,
     pub reached_sink: bool,
 }
@@ -243,6 +245,10 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
             visited.insert((nr, nc));
             propagated.insert((r, c));
             result.cell_states.insert((nr, nc), FlowState::Flowing);
+            // Record flow direction into the neighbor (from parent to child).
+            let dir_r = if nr > r { 1i8 } else if nr < r { -1i8 } else { 0i8 };
+            let dir_c = if nc > c { 1i8 } else if nc < c { -1i8 } else { 0i8 };
+            result.flow_dirs.insert((nr, nc), (dir_r, dir_c));
             queue.push_back((nr, nc));
             if sinks.contains(&(nr, nc)) {
                 result.reached_sink = true;

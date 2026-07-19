@@ -184,13 +184,13 @@ pub(crate) fn composite_box_char(
     let is_port   = dr == port_row;
 
     if is_top {
-        if north_inlet_dc == Some(dc) { return '╦'; }
+        if north_inlet_dc == Some(dc) { return '╩'; }
         match dc { 0 => '╔', c if c == fw - 1 => '╗', _ => '═' }
     } else if is_bottom {
         match dc { 0 => '╚', c if c == fw - 1 => '╝', _ => '═' }
     } else if is_port {
         if side_ports {
-            match dc { 0 => '╠', c if c == fw - 1 => '╣', c => label.chars().nth(c - 1).unwrap_or(' ') }
+            match dc { 0 => '╣', c if c == fw - 1 => '╠', c => label.chars().nth(c - 1).unwrap_or(' ') }
         } else {
             if dc == 0 || dc + 1 == fw { '║' } else { label.chars().nth(dc - 1).unwrap_or(' ') }
         }

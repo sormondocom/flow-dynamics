@@ -193,6 +193,7 @@ pub enum ComponentKind {
     SolidBlock,       // Structural element: wall/floor/ceiling, no plumbing  █
     Label,         // Canvas annotation: single-line text spanning empty cells to the right
     Note,          // Canvas annotation: multi-line boxed note (lines separated by \n)
+    Link,          // Canvas annotation: boxed link to another diagram file
     Custom,        // User-defined — connections & glyph stored in Component / GlyphRegistry
 }
 
@@ -209,8 +210,8 @@ impl ComponentKind {
             }
             // BasinSink: water enters from north inlet only (top-center), no E/W side ports.
             // North connectivity is handled via composite_north_inlet_offset().
-            // Label/Note: annotation-only, zero plumbing connections.
-            Self::BasinSink | Self::SolidBlock | Self::Label | Self::Note => (false, false, false, false),
+            // Label/Note/Link: annotation-only, zero plumbing connections.
+            Self::BasinSink | Self::SolidBlock | Self::Label | Self::Note | Self::Link => (false, false, false, false),
             Self::PipeV | Self::BallValveV | Self::CheckValveV => (true, true, false, false),
             Self::ElbowNE => (true, false, true, false),
             Self::ElbowNW => (true, false, false, true),
@@ -233,12 +234,19 @@ impl ComponentKind {
             Self::Source | Self::Sink | Self::EndCap
             | Self::PipeH | Self::PipeV | Self::Custom
             | Self::Toilet | Self::WaterHeater | Self::Faucet | Self::BasinSink
-            | Self::SolidBlock | Self::Label | Self::Note
+            | Self::SolidBlock | Self::Label | Self::Note | Self::Link
         )
     }
 
     pub fn is_annotation(self) -> bool {
-        matches!(self, Self::Label | Self::Note)
+        matches!(self, Self::Label | Self::Note | Self::Link)
+    }
+
+    /// Returns true for sealed passive terminals that should never generate flood
+    /// animation, even when Pressurized.  These components cap or monitor the pipe
+    /// but don't have an open orifice that water would spray from.
+    pub fn is_sealed_terminal(self) -> bool {
+        matches!(self, Self::PressureGauge | Self::EndCap)
     }
 
     pub fn equiv_length_diameters(self) -> f32 {
@@ -261,7 +269,7 @@ impl ComponentKind {
             Self::WaterHeater => 60.0, // tank plus fittings — similar to water softener
             Self::Faucet => 0.0,       // terminal drain — no friction loss counted
             Self::BasinSink => 5.0,    // slight friction through basin fittings
-            Self::SolidBlock | Self::Label | Self::Note => 0.0,
+            Self::SolidBlock | Self::Label | Self::Note | Self::Link => 0.0,
             Self::Custom => 0.0, // set per-instance via equiv_length_d in CustomCompDef
         }
     }
@@ -302,6 +310,7 @@ impl ComponentKind {
             Self::SolidBlock => '█',
             Self::Label => '"',
             Self::Note => '†',
+            Self::Link => '⇒',
             Self::Custom => '?',
         }
     }
@@ -343,6 +352,7 @@ impl ComponentKind {
             Self::SolidBlock => "Solid Block  █",
             Self::Label => "Label        \"",
             Self::Note => "Note         †",
+            Self::Link => "Link         ⇒",
             Self::Custom => "Custom Comp  ?",
         }
     }
@@ -382,6 +392,7 @@ impl ComponentKind {
             Self::SolidBlock => "Structural element — wall, floor, or ceiling. No plumbing connections. Use to outline rooms.",
             Self::Label => "Canvas label — inline text annotation spanning empty cells. Press Enter to type. [E] to edit.",
             Self::Note => "Canvas note — multi-line note box. Use | to separate lines. Press Enter to type. [E] to edit.",
+            Self::Link => "Diagram link — stores path to another .json diagram. [Enter] to follow, [E] to edit path.",
             Self::Custom => "Custom component — defined in the glyph editor [G].",
         }
     }
@@ -480,6 +491,7 @@ impl ComponentKind {
             Self::SolidBlock,
             Self::Label,
             Self::Note,
+            Self::Link,
         ]
     }
 }
@@ -564,12 +576,11 @@ impl Component {
     }
 
     /// Footprint (width, height) — respects custom_footprint for composite Custom components.
-    /// For composite Custom components the footprint includes a 1-cell buffer on all sides,
-    /// so the canvas footprint is (inner_w + 2) × (inner_h + 2).
+    /// custom_footprint stores the canvas dimensions directly (no implicit buffer ring).
     pub fn effective_footprint(&self) -> (usize, usize) {
         if self.kind == ComponentKind::Custom {
             if let Some((w, h)) = self.custom_footprint {
-                return (w + 2, h + 2);
+                return (w, h);
             }
         }
         self.kind.footprint()

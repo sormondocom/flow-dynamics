@@ -12,6 +12,15 @@ use super::centered_rect_abs;
 const VIS_ROWS: usize = 3;
 
 pub(super) fn render_annotation_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    if matches!(app.input_mode, InputMode::EditingText(TextEditTarget::SourcePressure)) {
+        render_pressure_dialog(f, app, area);
+        return;
+    }
+    if matches!(app.input_mode, InputMode::EditingText(TextEditTarget::LinkPath)) {
+        render_link_dialog(f, app, area);
+        return;
+    }
+
     let is_note = matches!(app.input_mode, InputMode::EditingText(TextEditTarget::NoteText));
     let is_edit = app.edit_annotation_pos.is_some();
 
@@ -78,6 +87,101 @@ pub(super) fn render_annotation_dialog(f: &mut Frame, app: &App, area: ratatui::
         Span::raw(if is_edit { " Update  " } else { " Confirm  " }),
         Span::styled("[Esc]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         Span::raw(" Cancel"),
+    ]));
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn render_pressure_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let accent = Color::Rgb(100, 180, 255);
+    let dim_bg = Color::Rgb(0, 10, 20);
+    let popup = centered_rect_abs(36, 7, area);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(accent))
+        .title(Span::styled(" Inlet Pressure ", Style::default().fg(accent).add_modifier(Modifier::BOLD)))
+        .style(Style::default().bg(dim_bg));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let buf = &app.input_buffer;
+    let cursor_pos = app.note_cursor_pos.min(buf.len());
+    let text_style   = Style::default().fg(Color::White).bg(Color::Rgb(20, 30, 50)).add_modifier(Modifier::BOLD);
+    let cursor_style = Style::default().fg(Color::Black).bg(Color::White).add_modifier(Modifier::BOLD);
+
+    let before   = &buf[..cursor_pos];
+    let (cur_ch, after) = if cursor_pos < buf.len() {
+        (&buf[cursor_pos..cursor_pos + 1], &buf[cursor_pos + 1..])
+    } else {
+        (" ", "")
+    };
+
+    // Field is 14 chars wide (36 popup - 2 border - 2 pad - 18 label)
+    let field_w = (inner.width as usize).saturating_sub(12);
+    let pad = field_w.saturating_sub(before.len() + 1 + after.len());
+
+    let mut lines: Vec<Line> = vec![Line::from(Span::raw(""))];
+    lines.push(Line::from(vec![
+        Span::styled("  PSI (10–200)  ", Style::default().fg(Color::Rgb(160, 160, 160))),
+    ]));
+    lines.push(Line::from(Span::raw("")));
+
+    let mut input_spans = vec![Span::raw("  ")];
+    if !before.is_empty() { input_spans.push(Span::styled(before.to_string(), text_style)); }
+    input_spans.push(Span::styled(cur_ch.to_string(), cursor_style));
+    if !after.is_empty()  { input_spans.push(Span::styled(after.to_string(), text_style)); }
+    if pad > 0 { input_spans.push(Span::styled(" ".repeat(pad), text_style)); }
+    lines.push(Line::from(input_spans));
+
+    lines.push(Line::from(Span::raw("")));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("[Enter]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::raw(" Set  "),
+        Span::styled("[Esc]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::raw(" Cancel"),
+    ]));
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn render_link_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let accent = Color::Rgb(255, 185, 55);
+    let dim_bg = Color::Rgb(18, 12, 0);
+    let is_edit = app.edit_annotation_pos.is_some();
+    let title = if is_edit { " Edit Link Path " } else { " New Diagram Link " };
+
+    let w: u16 = 64u16.min(area.width.saturating_sub(4));
+    let popup = centered_rect_abs(w, 9, area);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(accent))
+        .title(Span::styled(title, Style::default().fg(accent).add_modifier(Modifier::BOLD)))
+        .style(Style::default().bg(dim_bg));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = vec![Line::from(Span::raw(""))];
+    lines.push(Line::from(vec![
+        Span::styled("  Path to linked diagram  ", Style::default().fg(Color::Gray)),
+        Span::styled("[←→]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(" navigate", Style::default().fg(Color::Gray)),
+    ]));
+    lines.push(Line::from(Span::raw("")));
+    render_label_editor(&mut lines, app, inner.width as usize, accent);
+    lines.push(Line::from(Span::raw("")));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("[Enter]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::raw(if is_edit { " Update  " } else { " Place  " }),
+        Span::styled("[Esc]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::raw(" Cancel  "),
+        Span::styled("⇒", Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+        Span::styled(" [Enter] on placed link to follow", Style::default().fg(Color::DarkGray)),
     ]));
 
     f.render_widget(Paragraph::new(lines), inner);

@@ -163,13 +163,8 @@ pub(super) fn render_file_dialog(f: &mut Frame, app: &App) {
         let input_focused = fd.focus_input;
         let label = "  Filename: ";
         let input_w = inner.width.saturating_sub(label.len() as u16 + 2);
-        let cursor_char = if input_focused { "█" } else { " " };
-        let input_text = format!(
-            "{}{}_{}",
-            label,
-            &fd.filename_input,
-            cursor_char
-        );
+        let cursor_char = if input_focused { "█" } else { "" };
+        let input_text = format!("{}{}{}", label, &fd.filename_input, cursor_char);
         let (fg, bg) = if input_focused {
             (Color::Rgb(240, 252, 255), Color::Rgb(20, 40, 70))
         } else {
@@ -219,9 +214,11 @@ pub(super) fn render_confirm_new(f: &mut Frame, app: &App) {
 
     f.render_widget(Clear, dialog);
 
+    let is_follow_link = app.pending_link_path.is_some();
+    let title = if is_follow_link { " Follow Link " } else { " New Diagram " };
     let block = Block::default()
         .title(Span::styled(
-            " New Diagram ",
+            title,
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
@@ -247,11 +244,19 @@ pub(super) fn render_confirm_new(f: &mut Frame, app: &App) {
         Rect::new(cx, cy + 1, cw, 1),
     );
 
-    let opts: &[(&str, &str, &str)] = &[
-        ("S", "Save & start new diagram",        "save & new"),
-        ("D", "Discard changes & start new",     "discard"),
-        ("C", "Cancel — keep current diagram",   "cancel"),
-    ];
+    let opts: &[(&str, &str, &str)] = if is_follow_link {
+        &[
+            ("S", "Save & follow link",             "save & follow"),
+            ("D", "Discard changes & follow link",  "discard"),
+            ("C", "Cancel — stay in current diagram", "cancel"),
+        ]
+    } else {
+        &[
+            ("S", "Save & start new diagram",        "save & new"),
+            ("D", "Discard changes & start new",     "discard"),
+            ("C", "Cancel — keep current diagram",   "cancel"),
+        ]
+    };
 
     for (i, &(key, label, _)) in opts.iter().enumerate() {
         let selected = app.confirm_new_choice == i;

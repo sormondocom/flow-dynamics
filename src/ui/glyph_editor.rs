@@ -23,7 +23,7 @@ pub(super) fn render_glyph_editor(f: &mut Frame, app: &App) {
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(" Glyph Editor — [G/Q] exit  [Tab] panel  [Enter] apply  [N] new  [W] composite  [I/O/D] ports  [E] color  [S] save  [L] load ");
+        .title(" Glyph Editor — [G/Q] exit  [Tab] panel  [Enter] apply  [N] new  [R] rename  [C] copy  [Del] delete  [W] composite  [I/O/D] ports  [E] color  [S] save  [L] load ");
     let inner_area = outer.inner(area);
     f.render_widget(outer, area);
 
@@ -52,15 +52,24 @@ pub(super) fn render_glyph_editor(f: &mut Frame, app: &App) {
         } else { None }
     } else { None };
 
-    if let Some((ci, w, fh)) = center_composite {
-        let ext_fw = w + 2;
-        let ext_fh = fh + 2;
-        let grid_h = (ext_fh + 2) as u16;
-        let center_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(grid_h), Constraint::Min(0)])
-            .split(hchunks[1]);
-        render_composite_grid_editor(f, app, center_split[0], ci, ext_fw, ext_fh, ext_fh / 2);
+    if let Some((ci, canvas_w, canvas_h)) = center_composite {
+        // Display adds +2 visual buffer ring: display_fw = canvas_w + 2.
+        let display_fw = canvas_w + 2;
+        let display_fh = canvas_h + 2;
+        let avail_h = hchunks[1].height;
+        let grid_h_exact = (display_fh + 2) as u16;
+        let center_split = if grid_h_exact + 8 <= avail_h {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(grid_h_exact), Constraint::Min(0)])
+                .split(hchunks[1])
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(60), Constraint::Min(0)])
+                .split(hchunks[1])
+        };
+        render_composite_grid_editor(f, app, center_split[0], ci, display_fw, display_fh, display_fh / 2);
         render_editor_char_grid(f, app, center_split[1]);
     } else {
         render_editor_char_grid(f, app, hchunks[1]);
@@ -153,16 +162,24 @@ fn render_composite_grid_editor(
     app: &App,
     area: Rect,
     ci: usize,
-    fw: usize,  // extended width  = inner_w + 2
-    fh: usize,  // extended height = inner_h + 2
-    port_row: usize,
+    fw: usize,  // display width  = canvas_w + 2  (includes visual buffer ring)
+    fh: usize,  // display height = canvas_h + 2
+    _port_row: usize,
 ) {
     let focused = app.editor.focus == GlyphEditorFocus::CompositeGrid;
-    let inner_fw = fw.saturating_sub(2);
-    let inner_fh = fh.saturating_sub(2);
-    let inner_pr = port_row.saturating_sub(1);
+    // Canvas dimensions (the actual footprint stored in composite_size)
+    let canvas_w = fw.saturating_sub(2);
+    let canvas_h = fh.saturating_sub(2);
+    let canvas_pr = canvas_h / 2;
+
+    let (vr, vc) = app.editor.composite_viewport;
+    let scroll_info = if fh > 20 || fw > 40 {
+        format!(" [{},{}]", vr, vc)
+    } else {
+        String::new()
+    };
     let block = panel_block(
-        &format!("Tile Grid [{inner_fw}×{inner_fh}]  ↑↓←→  Enter place  Del clear  I/O/D port  (·=buffer)"),
+        &format!("Tile Grid [{canvas_w}×{canvas_h}]{scroll_info}  ↑↓←→  Enter place  Del clear  I/O/D port  (·=margin  60×60 max)"),
         focused,
     );
     let inner = block.inner(area);
@@ -175,26 +192,34 @@ fn render_composite_grid_editor(
     let (cursor_r, cursor_c) = app.editor.composite_cursor;
     let [base_r, base_g, base_b] = def.glyph.fg;
 
+    let max_rows = inner.height as usize;
+    let max_cols = inner.width as usize;
+
     let mut lines: Vec<Line> = Vec::new();
-    for dr in 0..fh {
+    for dr in vr..(vr + max_rows).min(fh) {
         let mut spans: Vec<Span> = Vec::new();
-        for dc in 0..fw {
+        for dc in vc..(vc + max_cols).min(fw) {
             let is_cursor = focused && dr == cursor_r && dc == cursor_c;
-            let is_buffer = dr == 0 || dr + 1 == fh || dc == 0 || dc + 1 == fw;
-            let has_override = def.get_cell(dr, dc).is_some();
-            let port = def.get_port_at(dr, dc);
+            // Display buffer ring at display dc=0, dc=fw-1, dr=0, dr=fh-1.
+            let is_visual_buffer = dr == 0 || dr + 1 == fh || dc == 0 || dc + 1 == fw;
+            // Data (canvas) coordinates: data = display - 1.
+            let (data_r, data_c) = (dr.wrapping_sub(1), dc.wrapping_sub(1));
+            let has_override = !is_visual_buffer && def.get_cell(data_r, data_c).is_some();
+            let port = if !is_visual_buffer { def.get_port_at(data_r, data_c) } else { None };
             let ch = if let Some(p) = port {
                 port_glyph_char(fw, fh, dr, dc, &p.kind)
+            } else if is_visual_buffer {
+                '·'
             } else {
-                def.get_cell(dr, dc).unwrap_or_else(|| {
-                    if is_buffer {
-                        '·'
-                    } else {
-                        composite_box_char(inner_fw, inner_fh, inner_pr, dr - 1, dc - 1, label, None, true)
-                    }
+                def.get_cell(data_r, data_c).unwrap_or_else(|| {
+                    composite_box_char(canvas_w, canvas_h, canvas_pr, data_r, data_c, label, None, true)
                 })
             };
-            let [cr, cg, cb] = def.get_cell_color(dr, dc).unwrap_or([base_r, base_g, base_b]);
+            let [cr, cg, cb] = if !is_visual_buffer {
+                def.get_cell_color(data_r, data_c).unwrap_or([base_r, base_g, base_b])
+            } else {
+                [base_r, base_g, base_b]
+            };
             let style = if is_cursor {
                 Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)
             } else if let Some(p) = port {
@@ -203,7 +228,7 @@ fn render_composite_grid_editor(
                     PortKind::Outlet => Style::default().fg(Color::Rgb(80, 160, 255)).add_modifier(Modifier::BOLD),
                     PortKind::Drain  => Style::default().fg(Color::Rgb(220, 130, 40)).add_modifier(Modifier::BOLD),
                 }
-            } else if is_buffer && !has_override {
+            } else if is_visual_buffer {
                 Style::default().fg(Color::Rgb(45, 45, 45))
             } else if has_override {
                 Style::default().fg(Color::Rgb(cr, cg, cb)).add_modifier(Modifier::BOLD)
@@ -214,11 +239,15 @@ fn render_composite_grid_editor(
         }
         if focused && dr == cursor_r {
             let preview_ch = app.editor.current_symbol();
+            // Buffer ring: dc=0 or dc=fw-1 or dr=0 or dr=fh-1.
             let in_buffer = cursor_r == 0 || cursor_r + 1 == fh || cursor_c == 0 || cursor_c + 1 == fw;
+            // Canvas border (where ports go): display dc=1/canvas_w or dr=1/canvas_h.
             let on_box_border = cursor_c == 1 || cursor_c == fw - 2 || cursor_r == 1 || cursor_r == fh - 2;
             let cursor_on_border = !in_buffer && on_box_border;
+            // Data coords for port lookup.
+            let (dcr, dcc) = (cursor_r.wrapping_sub(1), cursor_c.wrapping_sub(1));
             let port_hint = if cursor_on_border {
-                match def.get_port_at(cursor_r, cursor_c) {
+                match def.get_port_at(dcr, dcc) {
                     None                       => "  [I]nlet  [O]utlet  [D]rain",
                     Some(p) if p.kind == PortKind::Inlet  => "  [I]=Inlet✓  [O]utlet  [D]rain",
                     Some(p) if p.kind == PortKind::Outlet => "  [I]nlet  [O]=Outlet✓  [D]rain",
@@ -350,15 +379,18 @@ fn render_editor_status(f: &mut Frame, app: &App, area: Rect) {
 
     if let InputMode::EditingText(target) = app.input_mode {
         let prompt = match target {
-            TextEditTarget::SaveLibrary  => "Save library to file: ",
-            TextEditTarget::LoadLibrary  => "Load library from file: ",
-            TextEditTarget::NewCompName  => "New component name: ",
-            TextEditTarget::CompWidth    => "Composite size as WxH (e.g. 17x5, min 3×3; 0 = single-cell): ",
-            TextEditTarget::AssemblyName => "Assembly name: ",
-            TextEditTarget::AddGlyphFile  => "",
-            TextEditTarget::CustomRgb     => "Custom RGB (R,G,B): ",
+            TextEditTarget::SaveLibrary    => "Save library to file: ",
+            TextEditTarget::LoadLibrary    => "Load library from file: ",
+            TextEditTarget::NewCompName    => "New component name: ",
+            TextEditTarget::RenameComp     => "Rename component: ",
+            TextEditTarget::CopyComp       => "Copy as new component (name): ",
+            TextEditTarget::CompWidth      => "Composite size as WxH (e.g. 17x5, min 3×3; 0 = single-cell): ",
+            TextEditTarget::AssemblyName   => "Assembly name: ",
+            TextEditTarget::AddGlyphFile   => "",
+            TextEditTarget::CustomRgb      => "Custom RGB (R,G,B): ",
             TextEditTarget::BuildCustomRgb => "",
-            TextEditTarget::LabelText | TextEditTarget::NoteText => "",
+            TextEditTarget::LabelText | TextEditTarget::NoteText | TextEditTarget::SourcePressure
+            | TextEditTarget::LinkPath => "",
         };
         lines.push(Line::from(vec![
             Span::styled(prompt, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
@@ -401,12 +433,10 @@ fn render_editor_status(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Box-drawing connector char for a port at (dr, dc) in extended footprint space.
-/// Inlet: open end faces outward (toward external supply).
-/// Outlet/Drain: open end faces inward (toward box interior, showing where fluid originates).
-fn port_glyph_char(fw: usize, _fh: usize, dr: usize, dc: usize, kind: &PortKind) -> char {
-    let inlet = matches!(kind, PortKind::Inlet);
-    if dc == 1       { if inlet { '╣' } else { '╠' } }
-    else if dc == fw - 2 { if inlet { '╠' } else { '╣' } }
-    else if dr == 1       { if inlet { '╩' } else { '╦' } }
-    else                  { if inlet { '╦' } else { '╩' } }
+/// All port types face outward toward their external connection — kind is shown by color only.
+fn port_glyph_char(fw: usize, _fh: usize, dr: usize, dc: usize, _kind: &PortKind) -> char {
+    if dc == 1           { '╣' } // West border  → arm left,  opening faces outward (left)
+    else if dc == fw - 2 { '╠' } // East border  → arm right, opening faces outward (right)
+    else if dr == 1      { '╩' } // North border → arm up,    opening faces outward (up)
+    else                 { '╦' } // South border → arm down,  opening faces outward (down)
 }

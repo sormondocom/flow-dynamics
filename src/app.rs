@@ -19,6 +19,65 @@ const UNDO_MAX: usize = 50;
 
 /// Parse a composite size string: "WxH", "W" (height defaults to 3), or "0"/"" (single-cell).
 /// Returns (w, h); caller should reject if either < 3.
+/// Build a `CustomCompDef` that mirrors a built-in standard component.
+///
+/// For composite standards the returned def has the same canvas footprint
+/// (composite_size = (fw-2, fh-2)) and ports derived from the kind's
+/// connections.  For fh==3 composites (inner_h==1) the single interior row
+/// is pre-filled with the new label text so it renders legibly instead of
+/// showing top-border box chars.
+fn snapshot_standard_as_custom(
+    kind: ComponentKind,
+    new_id: String,
+    new_label: String,
+    glyph: crate::glyphs::GlyphDef,
+) -> crate::glyphs::CustomCompDef {
+    use crate::glyphs::{CustomCompDef, CustomPort, PortKind};
+
+    let mut def = CustomCompDef::new(new_id, new_label.clone(), glyph);
+    def.equiv_length_d = kind.equiv_length_diameters();
+
+    let (cn, cs, ce, cw) = kind.connections();
+
+    if !kind.is_composite() {
+        def.connections_nsew = [cn, cs, ce, cw];
+        return def;
+    }
+
+    let (fw, fh) = kind.footprint();
+    // composite_size = canvas dims directly (same as standard footprint, no extra buffer)
+    def.composite_size = Some((fw, fh));
+    let port_row = fh / 2;
+
+    // East/West ports at canvas edges (dc=0 west, dc=fw-1 east)
+    if cw {
+        def.ports.push(CustomPort { name: "inlet_w".into(), kind: PortKind::Inlet,  row: port_row, col: 0 });
+    }
+    if ce {
+        def.ports.push(CustomPort { name: "outlet_e".into(), kind: PortKind::Outlet, row: port_row, col: fw - 1 });
+    }
+
+    // BasinSink: north inlet + south drain (standard E/W connections are false)
+    if kind == ComponentKind::BasinSink {
+        def.ports.clear();
+        let mid = fw / 2;
+        def.ports.push(CustomPort { name: "inlet_n".into(), kind: PortKind::Inlet, row: 0,      col: mid });
+        def.ports.push(CustomPort { name: "drain_s".into(), kind: PortKind::Drain, row: fh - 1, col: mid });
+    }
+
+    // For fh==3 (a single interior row at dr=1) pre-fill with label text so the copy
+    // shows something legible instead of the default box-char '═'.
+    if fh == 3 {
+        let avail = fw.saturating_sub(2); // cols between west and east borders
+        let padded: String = new_label.chars().chain(std::iter::repeat(' ')).take(avail).collect();
+        for (i, ch) in padded.chars().enumerate() {
+            def.set_cell(port_row, i + 1, ch); // dc=1 is the first interior cell
+        }
+    }
+
+    def
+}
+
 fn parse_composite_size(s: &str) -> (usize, usize) {
     let s = s.trim();
     if let Some((wstr, hstr)) = s.split_once(|c| c == 'x' || c == 'X') {
@@ -29,6 +88,92 @@ fn parse_composite_size(s: &str) -> (usize, usize) {
         let w = s.parse::<usize>().unwrap_or(0);
         (w, 3) // default height
     }
+}
+
+fn parse_override_key(key: &str) -> Option<(usize, usize)> {
+    let (r, c) = key.split_once(',')?;
+    Some((r.parse().ok()?, c.parse().ok()?))
+}
+
+fn shift_composite_content(
+    def: &mut crate::glyphs::CustomCompDef,
+    dr_offset: isize,
+    dc_offset: isize,
+) {
+    use crate::glyphs::CustomCompDef;
+    let old_overrides = std::mem::take(&mut def.cell_overrides);
+    for (key, val) in old_overrides {
+        if let Some((r, c)) = parse_override_key(&key) {
+            let nr = (r as isize + dr_offset) as usize;
+            let nc = (c as isize + dc_offset) as usize;
+            def.cell_overrides.insert(CustomCompDef::override_key(nr, nc), val);
+        }
+    }
+    let old_colors = std::mem::take(&mut def.cell_color_overrides);
+    for (key, val) in old_colors {
+        if let Some((r, c)) = parse_override_key(&key) {
+            let nr = (r as isize + dr_offset) as usize;
+            let nc = (c as isize + dc_offset) as usize;
+            def.cell_color_overrides.insert(CustomCompDef::override_key(nr, nc), val);
+        }
+    }
+    for port in &mut def.ports {
+        port.row = (port.row as isize + dr_offset) as usize;
+        port.col = (port.col as isize + dc_offset) as usize;
+    }
+}
+
+fn trim_composite(def: &mut crate::glyphs::CustomCompDef) {
+    let (canvas_w, canvas_h) = match def.composite_size {
+        Some(s) => s,
+        None => return,
+    };
+    let fw = canvas_w;
+    let fh = canvas_h;
+
+    let mut min_r = usize::MAX;
+    let mut max_r = 0usize;
+    let mut min_c = usize::MAX;
+    let mut max_c = 0usize;
+    let mut has_content = false;
+
+    for key in def.cell_overrides.keys() {
+        if let Some((r, c)) = parse_override_key(key) {
+            min_r = min_r.min(r); max_r = max_r.max(r);
+            min_c = min_c.min(c); max_c = max_c.max(c);
+            has_content = true;
+        }
+    }
+    for port in &def.ports {
+        min_r = min_r.min(port.row); max_r = max_r.max(port.row);
+        min_c = min_c.min(port.col); max_c = max_c.max(port.col);
+        has_content = true;
+    }
+
+    if !has_content {
+        def.composite_size = Some((3, 3));
+        return;
+    }
+
+    // Content at the border edge (dc==0 or dc==fw-1) needs 0 extra padding;
+    // content in the interior needs 1 cell of padding (a border cell).
+    let left_pad  = if min_c == 0       { 0usize } else { 1 };
+    let right_pad = if max_c + 1 == fw  { 0usize } else { 1 };
+    let top_pad   = if min_r == 0       { 0usize } else { 1 };
+    let bot_pad   = if max_r + 1 == fh  { 0usize } else { 1 };
+
+    let new_fw = left_pad + (max_c - min_c + 1) + right_pad;
+    let new_fh = top_pad  + (max_r - min_r + 1) + bot_pad;
+    let new_canvas_w = new_fw.max(3);
+    let new_canvas_h = new_fh.max(3);
+
+    let dc_offset = left_pad as isize - min_c as isize;
+    let dr_offset = top_pad  as isize - min_r as isize;
+
+    if dc_offset != 0 || dr_offset != 0 {
+        shift_composite_content(def, dr_offset, dc_offset);
+    }
+    def.composite_size = Some((new_canvas_w, new_canvas_h));
 }
 
 // ── App mode ──────────────────────────────────────────────────────────────────
@@ -88,6 +233,14 @@ pub enum TextEditTarget {
     LabelText,
     /// Text for a Note annotation being placed at the cursor (Shift+Enter = line break).
     NoteText,
+    /// New name for renaming an existing custom component.
+    RenameComp,
+    /// Name for a clone of the currently selected custom component.
+    CopyComp,
+    /// Exact PSI value typed directly into the source pressure dialog.
+    SourcePressure,
+    /// File path for a Link annotation being placed or edited.
+    LinkPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +288,8 @@ pub struct App {
     pub assembly_idx: usize,
     /// Assembly currently being positioned for stamping.
     pub pending_stamp: Option<Assembly>,
+    /// When Some, the pending stamp is a "move": clear this rect from the grid on confirm.
+    pub stamp_cut_rect: Option<(usize, usize, usize, usize)>,
     /// Mode to restore when closing the browser or cancelling a stamp.
     pub pre_assembly_mode: AppMode,
     /// Default arm-stub lengths (ft) per kind and port; applied on component placement.
@@ -161,6 +316,8 @@ pub struct App {
     pub file_dialog: Option<FileDialogState>,
     /// Mode to restore when the file dialog is cancelled.
     pub pre_dialog_mode: AppMode,
+    /// Custom-component index awaiting delete confirmation in the glyph editor (None = no pending delete).
+    pub editor_pending_delete: Option<usize>,
     /// Selected option in the "unsaved changes" prompt (0=Save 1=Discard 2=Cancel).
     pub confirm_new_choice: usize,
     /// Selected option in the quit confirmation prompt (0=Save & Quit 1=Quit 2=Cancel).
@@ -185,12 +342,22 @@ pub struct App {
     pub pending_annotation: Option<(ComponentKind, String)>,
     /// When editing an existing annotation, the grid position to update in place.
     pub edit_annotation_pos: Option<(usize, usize)>,
+    /// Path stored when following a Link requires a save-before-switch confirmation.
+    pub pending_link_path: Option<String>,
     /// Byte offset of the cursor within input_buffer during NoteText editing.
     pub note_cursor_pos: usize,
     /// First visible row in the 3-row note text area.
     pub note_scroll_row: usize,
     /// First visible column in the note text area (horizontal scroll).
     pub note_scroll_col: usize,
+    /// Current search query typed with [/] in the component palette.
+    pub palette_search: String,
+    /// Whether the palette search bar is active.
+    pub palette_search_active: bool,
+    /// Current search query typed with [/] in the help screen.
+    pub help_search: String,
+    /// Whether the help search bar is active.
+    pub help_search_active: bool,
 }
 
 impl App {
@@ -231,6 +398,7 @@ impl App {
             assembly_path: Some(PathBuf::from("assemblies.json")),
             assembly_idx: 0,
             pending_stamp: None,
+            stamp_cut_rect: None,
             pre_assembly_mode: AppMode::Build,
             default_arm_lengths: HashMap::new(),
             detail_port_cursor: 0,
@@ -244,6 +412,7 @@ impl App {
             pre_help_mode: AppMode::Build,
             file_dialog: None,
             pre_dialog_mode: AppMode::Build,
+            editor_pending_delete: None,
             confirm_new_choice: 0,
             confirm_quit_choice: 0,
             pre_quit_mode: AppMode::Build,
@@ -256,9 +425,14 @@ impl App {
             redo_stack: Vec::new(),
             pending_annotation: None,
             edit_annotation_pos: None,
+            pending_link_path: None,
             note_cursor_pos: 0,
             note_scroll_row: 0,
             note_scroll_col: 0,
+            palette_search: String::new(),
+            palette_search_active: false,
+            help_search: String::new(),
+            help_search_active: false,
         };
         app.rebuild_palette();
         app
@@ -514,6 +688,7 @@ impl App {
                         match purpose {
                             FileDialogPurpose::SaveThenNew  => self.do_new_diagram(),
                             FileDialogPurpose::SaveThenQuit => self.should_quit = true,
+                            FileDialogPurpose::SaveThenFollowLink => self.do_follow_link(),
                             _ => {}
                         }
                     }
@@ -737,8 +912,8 @@ impl App {
 
         if is_composite {
             let (fw, fh, pr) = if let Some((_, _, Some(fp), _)) = &custom_info {
-                // +2 for the 1-cell buffer zone on all sides
-                (fp.0 + 2, fp.1 + 2, (fp.1 + 2) / 2)
+                // composite_size = canvas dims directly (no buffer ring)
+                (fp.0, fp.1, fp.1 / 2)
             } else {
                 let fp = kind.footprint();
                 (fp.0, fp.1, kind.port_row())
@@ -977,9 +1152,13 @@ impl App {
             }
             InputMode::EditingText(target) => {
                 if ch.is_ascii_graphic() || ch == ' ' {
-                    let limit = if matches!(target, TextEditTarget::NoteText) { 400 } else { 120 };
+                    let limit = match target {
+                        TextEditTarget::NoteText => 400,
+                        TextEditTarget::LinkPath => 256,
+                        _ => 120,
+                    };
                     if self.input_buffer.len() < limit {
-                        if matches!(target, TextEditTarget::NoteText | TextEditTarget::LabelText) {
+                        if matches!(target, TextEditTarget::NoteText | TextEditTarget::LabelText | TextEditTarget::LinkPath) {
                             let pos = self.note_cursor_pos.min(self.input_buffer.len());
                             self.input_buffer.insert(pos, ch);
                             self.note_cursor_pos = pos + ch.len_utf8();
@@ -999,6 +1178,7 @@ impl App {
             self.input_mode,
             InputMode::EditingText(TextEditTarget::NoteText)
                 | InputMode::EditingText(TextEditTarget::LabelText)
+                | InputMode::EditingText(TextEditTarget::LinkPath)
         );
         if cursor_edit {
             if self.note_cursor_pos > 0 {
@@ -1114,12 +1294,11 @@ impl App {
         matches!(self.input_mode, InputMode::EditingText(TextEditTarget::LabelText))
     }
 
-    pub fn label_move_left(&mut self) {
-        self.note_move_left();
-    }
+    pub fn label_move_left(&mut self) { self.note_move_left(); }
+    pub fn label_move_right(&mut self) { self.note_move_right(); }
 
-    pub fn label_move_right(&mut self) {
-        self.note_move_right();
+    pub fn is_link_path_mode(&self) -> bool {
+        matches!(self.input_mode, InputMode::EditingText(TextEditTarget::LinkPath))
     }
 
     pub fn cycle_drain_type_at_cursor(&mut self) {
@@ -1150,6 +1329,17 @@ impl App {
                 self.refresh_sim();
             }
         }
+    }
+
+    pub fn begin_source_pressure_dialog(&mut self) {
+        let (r, c) = self.cursor;
+        let Some(comp) = self.grid.get(r, c) else { return };
+        if comp.kind != ComponentKind::Source { return }
+        self.input_buffer = format!("{:.1}", comp.source_pressure_psi);
+        self.note_cursor_pos = self.input_buffer.len();
+        self.note_scroll_col = 0;
+        self.input_mode = InputMode::EditingText(TextEditTarget::SourcePressure);
+        self.mode = AppMode::AnnotationDialog;
     }
 
     // ── Material selection ───────────────────────────────────────────────────
@@ -1232,7 +1422,7 @@ impl App {
         self.mode = AppMode::GlyphEditor;
         self.editor.status =
             "  [Tab] switch panel  [Enter] apply  [M] mat scope  [D] diam scope  \
-             [N] new comp  [S] save  [L] load  [G/Q] exit"
+             [N] new  [R] rename  [C] copy  [W] composite  [S] save  [L] load  [G/Q] exit"
                 .into();
     }
 
@@ -1246,15 +1436,19 @@ impl App {
         let static_len = ComponentKind::all_palette().len();
 
         // CompositeGrid focus: place selected char into the tile under the cursor.
+        // Cursor is in display space (with +1 visual buffer offset); data = cursor - 1.
         if self.editor.focus == GlyphEditorFocus::CompositeGrid {
             let ci = self.editor.kind_idx.saturating_sub(static_len);
             if ci < self.glyph_registry.library.custom_components.len() {
-                let (row, col) = self.editor.composite_cursor;
+                let (display_r, display_c) = self.editor.composite_cursor;
+                if display_r == 0 || display_c == 0 { return; } // on visual buffer
+                let data_r = display_r - 1;
+                let data_c = display_c - 1;
                 let ch = self.editor.current_symbol();
                 let color = self.editor.current_color();
-                self.glyph_registry.library.custom_components[ci].set_cell(row, col, ch);
-                self.glyph_registry.library.custom_components[ci].set_cell_color(row, col, color);
-                self.editor.status = format!("Placed '{ch}' at ({row},{col}).");
+                self.glyph_registry.library.custom_components[ci].set_cell(data_r, data_c, ch);
+                self.glyph_registry.library.custom_components[ci].set_cell_color(data_r, data_c, color);
+                self.editor.status = format!("Placed '{ch}' at ({data_r},{data_c}).");
             }
             return;
         }
@@ -1291,10 +1485,13 @@ impl App {
         let static_len = ComponentKind::all_palette().len();
         let ci = self.editor.kind_idx.saturating_sub(static_len);
         if ci < self.glyph_registry.library.custom_components.len() {
-            let (row, col) = self.editor.composite_cursor;
-            self.glyph_registry.library.custom_components[ci].clear_cell(row, col);
-            self.glyph_registry.library.custom_components[ci].clear_cell_color(row, col);
-            self.editor.status = format!("Cleared cell ({row},{col}) — reverted to default.");
+            let (display_r, display_c) = self.editor.composite_cursor;
+            if display_r == 0 || display_c == 0 { return; }
+            let data_r = display_r - 1;
+            let data_c = display_c - 1;
+            self.glyph_registry.library.custom_components[ci].clear_cell(data_r, data_c);
+            self.glyph_registry.library.custom_components[ci].clear_cell_color(data_r, data_c);
+            self.editor.status = format!("Cleared cell ({data_r},{data_c}) — reverted to default.");
         }
     }
 
@@ -1303,22 +1500,26 @@ impl App {
         let static_len = ComponentKind::all_palette().len();
         let ci = self.editor.kind_idx.saturating_sub(static_len);
         if ci >= self.glyph_registry.library.custom_components.len() { return; }
-        let (row, col) = self.editor.composite_cursor;
-        let (fw, fh) = match self.glyph_registry.library.custom_components[ci].composite_size {
-            Some((w, h)) => (w + 2, h + 2),
+        let (display_r, display_c) = self.editor.composite_cursor;
+        if display_r == 0 || display_c == 0 { return; }
+        let data_r = display_r - 1;
+        let data_c = display_c - 1;
+        let (canvas_w, canvas_h) = match self.glyph_registry.library.custom_components[ci].composite_size {
+            Some(s) => s,
             None => {
                 self.editor.status = "Not a composite component.".into();
                 return;
             }
         };
         let def = &mut self.glyph_registry.library.custom_components[ci];
-        let msg = def.set_port(row, col, fw, fh, kind);
-        self.editor.status = format!("({row},{col}): {msg}");
+        let msg = def.set_port(data_r, data_c, canvas_w, canvas_h, kind);
+        self.editor.status = format!("({data_r},{data_c}): {msg}");
     }
 
     pub fn editor_nav(&mut self, dr: isize, dc: isize) {
         match self.editor.focus {
             GlyphEditorFocus::ComponentList => {
+                let prev_idx = self.editor.kind_idx;
                 let total = ComponentKind::all_palette().len()
                     + self.glyph_registry.custom_components().len();
                 self.editor.nav_kind(dr, total);
@@ -1328,18 +1529,65 @@ impl App {
                 {
                     self.editor.focus = GlyphEditorFocus::CharGrid;
                 }
+                // Reset composite cursor and viewport only when the selected component changes,
+                // so that returning to CompositeGrid after checking the list keeps the cursor in place.
+                if self.editor.kind_idx != prev_idx {
+                    self.editor.composite_cursor = (1, 1);
+                    self.editor.composite_viewport = (0, 0);
+                }
             }
             GlyphEditorFocus::CompositeGrid => {
                 let static_len = ComponentKind::all_palette().len();
                 let ci = self.editor.kind_idx.saturating_sub(static_len);
-                let customs = self.glyph_registry.custom_components();
-                let (fw, fh) = if ci < customs.len() {
-                    let (w, h) = customs[ci].composite_size.unwrap_or((1, 3));
-                    (w + 2, h + 2)
-                } else {
-                    (3, 5)
+                if ci >= self.glyph_registry.library.custom_components.len() { return; }
+                let (canvas_w, canvas_h) = match self.glyph_registry.library.custom_components[ci].composite_size {
+                    Some(s) => s,
+                    None => return,
                 };
-                self.editor.nav_composite(dr, dc, fw, fh);
+                // Display adds +2 visual buffer ring around the canvas area.
+                // Display range: dr=0..display_fh-1, dc=0..display_fw-1.
+                // Valid edit range: dr=1..canvas_h, dc=1..canvas_w (= canvas dc 0..canvas_w-1).
+                let display_fw = canvas_w + 2;
+                let display_fh = canvas_h + 2;
+                let (cur_r, cur_c) = self.editor.composite_cursor;
+                let new_r = cur_r as isize + dr;
+                let new_c = cur_c as isize + dc;
+                const MAX_CANVAS: usize = 60; // max canvas_w/canvas_h
+
+                if new_c >= display_fw as isize - 1 && canvas_w < MAX_CANVAS {
+                    // Expand east: cursor to new east display border
+                    self.glyph_registry.library.custom_components[ci].composite_size = Some((canvas_w + 1, canvas_h));
+                    self.editor.composite_cursor = (cur_r, display_fw - 1);
+                } else if new_c <= 0 && canvas_w < MAX_CANVAS {
+                    // Expand west: shift data right by 1, cursor stays at display dc=1
+                    shift_composite_content(&mut self.glyph_registry.library.custom_components[ci], 0, 1);
+                    self.glyph_registry.library.custom_components[ci].composite_size = Some((canvas_w + 1, canvas_h));
+                    self.editor.composite_cursor = (cur_r, 1);
+                } else if new_r >= display_fh as isize - 1 && canvas_h < MAX_CANVAS {
+                    // Expand south
+                    self.glyph_registry.library.custom_components[ci].composite_size = Some((canvas_w, canvas_h + 1));
+                    self.editor.composite_cursor = (display_fh - 1, cur_c);
+                } else if new_r <= 0 && canvas_h < MAX_CANVAS {
+                    // Expand north: shift data down by 1, cursor stays at display dr=1
+                    shift_composite_content(&mut self.glyph_registry.library.custom_components[ci], 1, 0);
+                    self.glyph_registry.library.custom_components[ci].composite_size = Some((canvas_w, canvas_h + 1));
+                    self.editor.composite_cursor = (1, cur_c);
+                } else {
+                    // Clamp to valid display edit range [1, canvas_w] × [1, canvas_h]
+                    let clamped_r = new_r.max(1).min(canvas_h as isize) as usize;
+                    let clamped_c = new_c.max(1).min(canvas_w as isize) as usize;
+                    self.editor.composite_cursor = (clamped_r, clamped_c);
+                }
+
+                // Scroll viewport to keep cursor visible (rough 20×40 assumed visible area)
+                let (cr, cc) = self.editor.composite_cursor;
+                let (vr, vc) = &mut self.editor.composite_viewport;
+                const VH: usize = 20;
+                const VW: usize = 40;
+                if cr < *vr { *vr = cr; }
+                else if cr >= *vr + VH { *vr = cr + 1 - VH; }
+                if cc < *vc { *vc = cc; }
+                else if cc >= *vc + VW { *vc = cc + 1 - VW; }
             }
             GlyphEditorFocus::CharGrid    => self.editor.nav_char(dr, dc),
             GlyphEditorFocus::ColorPicker => self.editor.nav_color(dr, dc),
@@ -1408,7 +1656,7 @@ impl App {
     pub fn start_selecting(&mut self) {
         self.select_start = Some(self.cursor);
         self.mode = AppMode::Selecting;
-        self.status_msg = "Selection started — move cursor, then [Enter]/[R] to name & save, [Esc] to cancel.".into();
+        self.status_msg = "Selection: arrows resize rect  [C] copy  [X] move  [Enter]/[R] save assembly  [Esc] cancel".into();
     }
 
     pub fn confirm_selection(&mut self) {
@@ -1423,6 +1671,43 @@ impl App {
         self.select_start = None;
         self.mode = AppMode::Build;
         self.status_msg = "Selection cancelled.".into();
+    }
+
+    /// Copy the selection rectangle to the stamp clipboard and enter Stamping mode.
+    /// Original content is preserved regardless of where the paste lands.
+    pub fn copy_selection(&mut self) {
+        self.enter_stamp_mode(false);
+    }
+
+    /// Cut the selection rectangle: enter Stamping mode and clear the source rect on paste.
+    pub fn move_selection(&mut self) {
+        self.enter_stamp_mode(true);
+    }
+
+    fn enter_stamp_mode(&mut self, is_cut: bool) {
+        let Some(start) = self.select_start else { return };
+        let end = self.cursor;
+        let r0 = start.0.min(end.0);
+        let r1 = start.0.max(end.0);
+        let c0 = start.1.min(end.1);
+        let c1 = start.1.max(end.1);
+        let asm = Assembly::from_selection(
+            &self.grid, r0, c0, r1, c1,
+            "clipboard".into(), String::new(),
+        );
+        let count = asm.component_count();
+        let w = c1 - c0 + 1;
+        let h = r1 - r0 + 1;
+        self.pending_stamp = Some(asm);
+        self.stamp_cut_rect = if is_cut { Some((r0, c0, r1, c1)) } else { None };
+        self.select_start = None;
+        self.cursor = (r0, c0); // ghost starts aligned over original
+        self.mode = AppMode::Stamping;
+        let action = if is_cut { "move" } else { "copy" };
+        self.status_msg = format!(
+            "{}×{} ({} components) to {} — arrows to position, [Enter] paste, [Esc] cancel",
+            w, h, count, action
+        );
     }
 
     pub fn save_assembly_named(&mut self, name: String) {
@@ -1504,17 +1789,27 @@ impl App {
         if let Some(asm) = self.pending_stamp.take() {
             let (r, c) = self.cursor;
             self.push_undo();
+            // For moves: clear the source region before stamping so overlapping areas work correctly.
+            if let Some((r0, c0, r1, c1)) = self.stamp_cut_rect.take() {
+                for gr in r0..=r1 {
+                    for gc in c0..=c1 {
+                        self.grid.set(gr, gc, None);
+                    }
+                }
+            }
             asm.stamp_onto(&mut self.grid, r, c);
+            self.grid.rebuild_satellites();
             self.mode = AppMode::Build;
-            self.status_msg = format!("Stamped '{}' at ({},{}).", asm.name, r, c);
+            self.status_msg = format!("Pasted {}×{} at ({},{}).", asm.width, asm.height, r, c);
             self.refresh_sim();
         }
     }
 
     pub fn cancel_stamp(&mut self) {
         self.pending_stamp = None;
+        self.stamp_cut_rect = None;
         self.mode = AppMode::Build;
-        self.status_msg = "Stamp cancelled.".into();
+        self.status_msg = "Cancelled.".into();
     }
 
     // ── Component detail ─────────────────────────────────────────────────────
@@ -1662,6 +1957,83 @@ impl App {
         self.input_mode = InputMode::EditingText(TextEditTarget::NewCompName);
     }
 
+    pub fn editor_begin_rename_comp(&mut self) {
+        let static_len = ComponentKind::all_palette().len();
+        if self.editor.kind_idx < static_len {
+            self.editor.status = "Built-in components can't be renamed — use [C] to copy it as an editable custom component.".into();
+            return;
+        }
+        let ci = self.editor.kind_idx - static_len;
+        let customs = self.glyph_registry.custom_components();
+        if ci >= customs.len() {
+            self.editor.status = "No custom component selected.".into();
+            return;
+        }
+        self.input_buffer = customs[ci].label.clone();
+        self.input_mode = InputMode::EditingText(TextEditTarget::RenameComp);
+    }
+
+    pub fn editor_begin_copy_comp(&mut self) {
+        let static_len = ComponentKind::all_palette().len();
+        let source_label = if self.editor.kind_idx < static_len {
+            ComponentKind::all_palette()[self.editor.kind_idx].label().to_string()
+        } else {
+            let ci = self.editor.kind_idx - static_len;
+            let customs = self.glyph_registry.custom_components();
+            if ci >= customs.len() {
+                self.editor.status = "No component selected.".into();
+                return;
+            }
+            customs[ci].label.clone()
+        };
+        self.input_buffer = format!("{source_label} Copy");
+        self.input_mode = InputMode::EditingText(TextEditTarget::CopyComp);
+    }
+
+    /// First [Del] press — arms the pending-delete prompt.
+    pub fn editor_delete_custom_comp(&mut self) {
+        let static_len = ComponentKind::all_palette().len();
+        if self.editor.kind_idx < static_len {
+            self.editor.status = "Built-in components can't be deleted. Use [C] to copy as a custom component.".into();
+            return;
+        }
+        let ci = self.editor.kind_idx - static_len;
+        if ci >= self.glyph_registry.library.custom_components.len() {
+            self.editor.status = "No custom component selected.".into();
+            return;
+        }
+        let name = &self.glyph_registry.library.custom_components[ci].label;
+        self.editor.status = format!("Delete '{name}'?  [Y] confirm  [N / any key] cancel");
+        self.editor_pending_delete = Some(ci);
+    }
+
+    /// [Y] after the delete prompt — executes the deletion.
+    pub fn editor_confirm_delete_comp(&mut self) {
+        let Some(ci) = self.editor_pending_delete.take() else { return };
+        let static_len = ComponentKind::all_palette().len();
+        let customs = &mut self.glyph_registry.library.custom_components;
+        if ci >= customs.len() {
+            self.editor.status = "Component no longer exists.".into();
+            return;
+        }
+        let name = customs[ci].label.clone();
+        customs.remove(ci);
+        let new_len = self.glyph_registry.library.custom_components.len();
+        self.editor.kind_idx = if new_len == 0 {
+            static_len.saturating_sub(1)
+        } else {
+            (static_len + ci).min(static_len + new_len - 1)
+        };
+        self.rebuild_palette();
+        self.editor.status = format!("Deleted '{name}'. Press [S] to save the library.");
+    }
+
+    /// Any non-Y key during the delete prompt — cancels without deleting.
+    pub fn editor_cancel_delete_comp(&mut self) {
+        self.editor_pending_delete = None;
+        self.editor.status = "Delete cancelled.".into();
+    }
+
     pub fn editor_begin_set_composite_width(&mut self) {
         let static_len = ComponentKind::all_palette().len();
         if self.editor.kind_idx < static_len {
@@ -1683,10 +2055,20 @@ impl App {
 
     /// Commit a text-input prompt started from the glyph editor.
     pub fn commit_text_input(&mut self) {
+        // resolve here so the borrow checker is happy inside the match arms
+        let copy_kind_idx = self.editor.kind_idx;
         let buf = self.input_buffer.trim().to_string();
         match self.input_mode {
             InputMode::EditingText(TextEditTarget::SaveLibrary) => {
                 let path = std::path::Path::new(&buf);
+                // Trim all composite components to their used bounding box.
+                for def in &mut self.glyph_registry.library.custom_components {
+                    trim_composite(def);
+                }
+                self.glyph_registry.library.version = "2.0".into();
+                // Reset editor state so cursor is valid after trim.
+                self.editor.composite_cursor = (1, 1);
+                self.editor.composite_viewport = (0, 0);
                 match self.glyph_registry.save_library(path) {
                     Ok(()) => {
                         self.editor.status = format!("Saved to '{buf}'.");
@@ -1828,6 +2210,90 @@ impl App {
                 } else if !buf.is_empty() {
                     self.pending_annotation = Some((ComponentKind::Note, buf));
                     self.status_msg = "Move cursor to position, [Enter] to place, [Esc] to cancel.".into();
+                }
+            }
+            InputMode::EditingText(TextEditTarget::RenameComp) => {
+                if buf.is_empty() {
+                    self.editor.status = "Name cannot be empty.".into();
+                } else {
+                    let static_len = ComponentKind::all_palette().len();
+                    let ci = self.editor.kind_idx.saturating_sub(static_len);
+                    if ci < self.glyph_registry.library.custom_components.len() {
+                        let new_id = buf.to_lowercase().replace(' ', "_");
+                        let def = &mut self.glyph_registry.library.custom_components[ci];
+                        def.label = buf.clone();
+                        def.id = new_id;
+                        self.rebuild_palette();
+                        self.editor.status = format!("Renamed to '{buf}'.");
+                    }
+                }
+            }
+            InputMode::EditingText(TextEditTarget::LinkPath) => {
+                self.mode = AppMode::Build;
+                if let Some((r, c)) = self.edit_annotation_pos.take() {
+                    self.push_undo();
+                    if buf.is_empty() {
+                        self.grid.set(r, c, None);
+                        self.status_msg = "Link removed.".into();
+                    } else {
+                        let mut comp = crate::components::Component::new(ComponentKind::Link, self.selected_diameter, self.selected_material);
+                        comp.text = Some(buf);
+                        self.grid.set(r, c, Some(comp));
+                        self.status_msg = "Link updated.".into();
+                    }
+                    self.refresh_sim();
+                } else if !buf.is_empty() {
+                    self.pending_annotation = Some((ComponentKind::Link, buf));
+                    self.status_msg = "Move cursor to position, [Enter] to place, [Esc] to cancel.".into();
+                }
+            }
+            InputMode::EditingText(TextEditTarget::SourcePressure) => {
+                self.input_mode = InputMode::Normal;
+                self.mode = AppMode::Build;
+                match buf.parse::<f32>() {
+                    Ok(psi) => {
+                        let psi = psi.clamp(10.0, 200.0);
+                        let (r, c) = self.cursor;
+                        if self.grid.get(r, c).map(|co| co.kind == ComponentKind::Source).unwrap_or(false) {
+                            self.push_undo();
+                            if let Some(comp) = self.grid.get_mut(r, c) {
+                                comp.source_pressure_psi = psi;
+                            }
+                            self.refresh_sim();
+                            self.status_msg = format!("Inlet pressure set to {psi:.1} PSI.");
+                        }
+                    }
+                    Err(_) => {
+                        self.status_msg = "Invalid pressure — enter a number between 10 and 200.".into();
+                    }
+                }
+            }
+            InputMode::EditingText(TextEditTarget::CopyComp) => {
+                if buf.is_empty() {
+                    self.editor.status = "Name cannot be empty.".into();
+                } else {
+                    let static_len = ComponentKind::all_palette().len();
+                    let new_id = buf.to_lowercase().replace(' ', "_");
+                    if copy_kind_idx < static_len {
+                        // Copy from a built-in standard component → snapshot as custom
+                        let kind = ComponentKind::all_palette()[copy_kind_idx];
+                        let glyph = self.glyph_registry.resolve(kind, self.selected_material, self.selected_diameter);
+                        let def = snapshot_standard_as_custom(kind, new_id, buf.clone(), glyph);
+                        self.glyph_registry.add_custom_component(def);
+                    } else {
+                        // Copy from an existing custom component → deep clone
+                        let ci = copy_kind_idx - static_len;
+                        if ci < self.glyph_registry.library.custom_components.len() {
+                            let mut clone = self.glyph_registry.library.custom_components[ci].clone();
+                            clone.id = new_id;
+                            clone.label = buf.clone();
+                            self.glyph_registry.add_custom_component(clone);
+                        }
+                    }
+                    self.rebuild_palette();
+                    let new_ci = self.glyph_registry.custom_components().len() - 1;
+                    self.editor.kind_idx = static_len + new_ci;
+                    self.editor.status = format!("Copied to '{buf}'. Edit ports/cells as needed.");
                 }
             }
             _ => {}
@@ -2022,6 +2488,150 @@ impl App {
         self.edit_annotation_pos = if is_existing { Some((r, c)) } else { None };
         self.input_mode = InputMode::EditingText(TextEditTarget::NoteText);
         self.mode = AppMode::AnnotationDialog;
+    }
+
+    pub fn begin_link_placement(&mut self) {
+        let (r, c) = self.cursor;
+        let is_existing = self.grid.get(r, c).map(|co| co.kind == ComponentKind::Link).unwrap_or(false);
+        let existing = self.grid.get(r, c)
+            .filter(|co| co.kind == ComponentKind::Link)
+            .and_then(|co| co.text.as_deref())
+            .unwrap_or("")
+            .to_string();
+        self.input_buffer = existing;
+        self.note_cursor_pos = self.input_buffer.len();
+        self.note_scroll_col = 0;
+        self.note_update_scroll();
+        self.edit_annotation_pos = if is_existing { Some((r, c)) } else { None };
+        self.input_mode = InputMode::EditingText(TextEditTarget::LinkPath);
+        self.mode = AppMode::AnnotationDialog;
+    }
+
+    pub fn follow_link_at_cursor(&mut self) {
+        let (r, c) = self.cursor;
+        let Some(comp) = self.grid.get(r, c) else { return };
+        if comp.kind != ComponentKind::Link { return }
+        let path_str = comp.text.clone().unwrap_or_default();
+        if path_str.is_empty() {
+            self.status_msg = "Link has no target — press [E] to set path.".into();
+            return;
+        }
+        self.pending_link_path = Some(path_str);
+        if self.grid_has_content() {
+            self.confirm_new_choice = 0;
+            self.mode = AppMode::ConfirmNew;
+        } else {
+            self.do_follow_link();
+        }
+    }
+
+    pub fn do_follow_link(&mut self) {
+        if let Some(path_str) = self.pending_link_path.take() {
+            let path = std::path::PathBuf::from(&path_str);
+            match self.load_layout_from(&path) {
+                Ok(()) => {}
+                Err(e) => self.status_msg = format!("Link failed: {e}"),
+            }
+            self.mode = AppMode::Build;
+        }
+    }
+
+    // ── Palette search ────────────────────────────────────────────────────────
+
+    pub fn palette_item_matches(&self, idx: usize, query: &str) -> bool {
+        let Some(kind) = self.palette.get(idx) else { return false };
+        if *kind == ComponentKind::Custom {
+            let customs = self.glyph_registry.custom_components();
+            let ci = self.palette_custom_indices.get(idx).copied().flatten();
+            if let Some(ci) = ci.filter(|&ci| ci < customs.len()) {
+                return customs[ci].label.to_lowercase().contains(query);
+            }
+            return "custom comp".contains(query);
+        }
+        kind.label().to_lowercase().contains(query)
+    }
+
+    /// Jump palette_idx to the first palette item that matches the current search query.
+    pub fn palette_search_jump_first(&mut self) {
+        let query = self.palette_search.to_lowercase();
+        if query.is_empty() { return; }
+        let len = self.palette.len();
+        for i in 0..len {
+            if self.palette_item_matches(i, &query) {
+                self.palette_idx = i;
+                return;
+            }
+        }
+    }
+
+    /// Move palette_idx to the next matching item (wraps around).
+    pub fn palette_search_next(&mut self) {
+        let query = self.palette_search.to_lowercase();
+        if query.is_empty() { return; }
+        let len = self.palette.len();
+        for offset in 1..=len {
+            let i = (self.palette_idx + offset) % len;
+            if self.palette_item_matches(i, &query) {
+                self.palette_idx = i;
+                return;
+            }
+        }
+    }
+
+    /// Move palette_idx to the previous matching item (wraps around).
+    pub fn palette_search_prev(&mut self) {
+        let query = self.palette_search.to_lowercase();
+        if query.is_empty() { return; }
+        let len = self.palette.len();
+        for offset in 1..=len {
+            let i = (self.palette_idx + len - offset) % len;
+            if self.palette_item_matches(i, &query) {
+                self.palette_idx = i;
+                return;
+            }
+        }
+    }
+
+    // ── Help search ──────────────────────────────────────────────────────────
+
+    /// Scroll help to the first line matching the current search query.
+    pub fn help_search_jump_first(&mut self) {
+        let query = self.help_search.to_lowercase();
+        if query.is_empty() { return; }
+        for (i, line) in self.help_lines.iter().enumerate() {
+            if line.to_lowercase().contains(&query) {
+                self.help_scroll = i;
+                return;
+            }
+        }
+    }
+
+    /// Scroll help to the next matching line after help_scroll (wraps).
+    pub fn help_search_next(&mut self) {
+        let query = self.help_search.to_lowercase();
+        if query.is_empty() { return; }
+        let total = self.help_lines.len();
+        for offset in 1..=total {
+            let i = (self.help_scroll + offset) % total;
+            if self.help_lines.get(i).map(|l| l.to_lowercase().contains(&query)).unwrap_or(false) {
+                self.help_scroll = i;
+                return;
+            }
+        }
+    }
+
+    /// Scroll help to the previous matching line before help_scroll (wraps).
+    pub fn help_search_prev(&mut self) {
+        let query = self.help_search.to_lowercase();
+        if query.is_empty() { return; }
+        let total = self.help_lines.len();
+        for offset in 1..=total {
+            let i = (self.help_scroll + total - offset) % total;
+            if self.help_lines.get(i).map(|l| l.to_lowercase().contains(&query)).unwrap_or(false) {
+                self.help_scroll = i;
+                return;
+            }
+        }
     }
 
     pub fn place_pending_annotation(&mut self) {
