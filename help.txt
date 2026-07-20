@@ -474,6 +474,22 @@ A single-cell inline gauge with four-way ports (N/S/E/W).
 Reads local pressure at the point of installation.
 Zero friction loss — purely for monitoring.
 
+## Flow Meter  ⊗
+
+A single-cell inline flow meter.  Available in horizontal (E/W ports) and
+vertical (N/S ports) orientations.
+
+Reads the volumetric flow rate (GPM) passing through it.  When simulation is
+running, the footer shows:
+
+  ⊗ METER  2.34 GPM   65.2 PSI  [FLOWING]
+
+The meter symbol stays visible during simulation with a teal glow on the
+fluid background, so you can see exactly where metering points are in the
+active network.
+
+Equivalent friction: ~2 pipe-diameters (paddle/turbine sensor — negligible).
+
 ---
 
 # Structure Components

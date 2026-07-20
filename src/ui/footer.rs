@@ -123,6 +123,22 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                         Style::default().fg(Color::DarkGray),
                     ),
                 ]));
+            } else if matches!(comp.kind, ComponentKind::FlowMeterH | ComponentKind::FlowMeterV) {
+                lines.push(Line::from(vec![
+                    Span::styled("⊗ METER  ", Style::default().fg(Color::Rgb(60, 200, 180)).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{:.2} GPM", fd.flow_gpm),
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("   {:.1} PSI", fd.pressure_psi),
+                        Style::default().fg(Color::Rgb(160, 175, 185)),
+                    ),
+                    Span::styled(
+                        format!("  [{flow_state_label}]"),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]));
             } else {
                 let vel_limit = comp.material.max_velocity_fps();
                 let vel_exceeded = fd.velocity_fps > vel_limit;

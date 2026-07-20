@@ -37,7 +37,7 @@
 - **Live simulation** — pressure and GPM propagate through your network in real time
 - **Flood animation** — open pipe ends leak animated `~`/`≈` water characters into adjacent empty cells during simulation, making dead-ends and unfinished runs immediately visible
 - **Full pipe set** — straight runs, elbows, tees, crosses, reducers, ball valves, check valves, endcaps, gauges
-- **Fixture components** — Toilet, Faucet/Sink, Basin Sink (with overflow animation), Water Heater, Water Softener, Whole House Filter (⊞), Sediment Filter (⊟), UV Filter (⊕), Pressure Gauge (⊙)
+- **Fixture components** — Toilet, Faucet/Sink, Basin Sink (with overflow animation), Water Heater, Water Softener, Whole House Filter (⊞), Sediment Filter (⊟), UV Filter (⊕), Pressure Gauge (⊙), Flow Meter (⊗)
 - **Annotations** — inline Labels, multi-line framed Notes, and Diagram Links (⇒) placed directly on the canvas
 - **Diagram links** — Link (⇒) components store a path to another `.json` layout; press `Enter` on a placed link to follow it (prompts to save first if needed)
 - **Assembly system** — save any region as a named assembly and stamp it anywhere

@@ -558,6 +558,8 @@ pub fn kind_key(k: ComponentKind) -> &'static str {
         ComponentKind::EndCap       => "EndCap",
         ComponentKind::Reducer        => "Reducer",
         ComponentKind::PressureGauge  => "PressureGauge",
+        ComponentKind::FlowMeterH     => "FlowMeterH",
+        ComponentKind::FlowMeterV     => "FlowMeterV",
         ComponentKind::WaterSoftener     => "WaterSoftener",
         ComponentKind::WholeHouseFilter  => "WholeHouseFilter",
         ComponentKind::SedimentFilter    => "SedimentFilter",

@@ -57,6 +57,7 @@ pub(super) fn render_bom(f: &mut Frame, app: &App, area: Rect) {
         ("End Cap",        '■', |k| k == ComponentKind::EndCap),
         ("Reducer",        '◄', |k| k == ComponentKind::Reducer),
         ("Pressure Gauge", '⊙', |k| k == ComponentKind::PressureGauge),
+        ("Flow Meter",     '⊗', |k| matches!(k, ComponentKind::FlowMeterH | ComponentKind::FlowMeterV)),
     ];
     let mut group_counts = vec![0usize; group_defs.len()];
     let mut total_comps = 0usize;

@@ -182,6 +182,8 @@ pub enum ComponentKind {
     EndCap,
     Reducer,       // Horizontal diameter transition
     PressureGauge, // Inline gauge — reads local pressure, zero friction loss
+    FlowMeterH,    // Inline flow meter, E/W ports — reads GPM, minimal friction  ⊗
+    FlowMeterV,    // Inline flow meter, N/S ports — reads GPM, minimal friction  ⊗
     WaterSoftener,    // Inline treatment: ion exchange, E/W ports  ◎
     WholeHouseFilter, // Inline treatment: carbon/media filter, E/W ports  ⊞
     SedimentFilter,   // Inline treatment: particle pre-filter, E/W ports  ⊟
@@ -203,6 +205,7 @@ impl ComponentKind {
         match self {
             Self::Source | Self::Sink | Self::Cross | Self::PressureGauge => (true, true, true, true),
             Self::PipeH | Self::BallValveH | Self::CheckValveH | Self::Reducer
+            | Self::FlowMeterH
             | Self::WaterSoftener | Self::WholeHouseFilter | Self::SedimentFilter | Self::UvFilter
             | Self::Toilet | Self::WaterHeater | Self::Faucet
             | Self::Custom => {
@@ -212,7 +215,7 @@ impl ComponentKind {
             // North connectivity is handled via composite_north_inlet_offset().
             // Label/Note/Link: annotation-only, zero plumbing connections.
             Self::BasinSink | Self::SolidBlock | Self::Label | Self::Note | Self::Link => (false, false, false, false),
-            Self::PipeV | Self::BallValveV | Self::CheckValveV => (true, true, false, false),
+            Self::PipeV | Self::BallValveV | Self::CheckValveV | Self::FlowMeterV => (true, true, false, false),
             Self::ElbowNE => (true, false, true, false),
             Self::ElbowNW => (true, false, false, true),
             Self::ElbowSE => (false, true, true, false),
@@ -246,12 +249,13 @@ impl ComponentKind {
     /// animation, even when Pressurized.  These components cap or monitor the pipe
     /// but don't have an open orifice that water would spray from.
     pub fn is_sealed_terminal(self) -> bool {
-        matches!(self, Self::PressureGauge | Self::EndCap)
+        matches!(self, Self::PressureGauge | Self::EndCap | Self::FlowMeterH | Self::FlowMeterV)
     }
 
     pub fn equiv_length_diameters(self) -> f32 {
         match self {
             Self::Source | Self::Sink | Self::EndCap | Self::PressureGauge => 0.0,
+            Self::FlowMeterH | Self::FlowMeterV => 2.0, // paddle/turbine sensor — near-zero friction
             Self::PipeH | Self::PipeV => 0.0, // uses pipe_length field
             Self::ElbowNE | Self::ElbowNW | Self::ElbowSE | Self::ElbowSW => 30.0,
             Self::TeeNSE | Self::TeeNSW | Self::TeeNEW | Self::TeeSEW => 40.0,
@@ -299,6 +303,7 @@ impl ComponentKind {
             Self::EndCap => '■',
             Self::Reducer => '◄',
             Self::PressureGauge => '⊙',
+            Self::FlowMeterH | Self::FlowMeterV => '⊗',
             Self::WaterSoftener => '◎',
             Self::WholeHouseFilter => '⊞',
             Self::SedimentFilter => '⊟',
@@ -341,6 +346,8 @@ impl ComponentKind {
             Self::EndCap => "End Cap     ■",
             Self::Reducer => "Reducer  ═◄═",
             Self::PressureGauge => "Press Gauge ⊙",
+            Self::FlowMeterH => "Flow Meter  ═",
+            Self::FlowMeterV => "Flow Meter  ║",
             Self::WaterSoftener => "Water Softener◎",
             Self::WholeHouseFilter => "House Filter  ⊞",
             Self::SedimentFilter => "Sediment Fltr ⊟",
@@ -381,6 +388,8 @@ impl ComponentKind {
             Self::EndCap => "End cap — terminates pipe. Creates pressurized dead-end.",
             Self::Reducer => "Reducer — diameter transition fitting (~5D equiv.).",
             Self::PressureGauge => "Pressure gauge — reads local PSI. Zero friction loss.",
+            Self::FlowMeterH => "Flow meter (E/W) — reads GPM inline. Minimal friction (~2D equiv.).",
+            Self::FlowMeterV => "Flow meter (N/S) — reads GPM inline. Minimal friction (~2D equiv.).",
             Self::WaterSoftener => "Water softener — ion exchange resin tank. 1 inlet (W), 1 outlet (E). ~80D equiv.",
             Self::WholeHouseFilter => "Whole-house filter — carbon/media canister. 1 inlet (W), 1 outlet (E). ~50D equiv.",
             Self::SedimentFilter => "Sediment pre-filter — removes particulates. 1 inlet (W), 1 outlet (E). ~30D equiv.",
@@ -480,6 +489,8 @@ impl ComponentKind {
             Self::EndCap,
             Self::Reducer,
             Self::PressureGauge,
+            Self::FlowMeterH,
+            Self::FlowMeterV,
             Self::WaterSoftener,
             Self::WholeHouseFilter,
             Self::SedimentFilter,

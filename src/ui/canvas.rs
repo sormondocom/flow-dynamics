@@ -876,6 +876,10 @@ fn cell_appearance(
                     ComponentKind::Source => (base_ch, Color::LightGreen, None),
                     ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet
                     | ComponentKind::BasinSink => (base_ch, Color::LightMagenta, None),
+                    ComponentKind::FlowMeterH | ComponentKind::FlowMeterV => {
+                        // Keep ⊗ symbol visible; teal glow on fluid background signals active metering
+                        (base_ch, Color::Rgb(60, 200, 180), Some(f_bg))
+                    }
                     _ => {
                         let period: usize =
                             if gpm > 5.0 { 3 } else if gpm > 2.0 { 4 } else { 6 };
