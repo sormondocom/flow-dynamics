@@ -21,8 +21,9 @@ const R_INF: f32 = 1.0e12;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlowState {
+    #[default]
     Static,
     Flowing,
     Pressurized,
@@ -65,7 +66,7 @@ fn candidate_neighbors(
         // For custom composites with explicit ports, port external cells replace the
         // default E/W footprint neighbors; otherwise use the legacy E/W behavior.
         let custom_has_ports = comp.kind == ComponentKind::Custom
-            && comp.custom_id.as_ref().map_or(false, |id| {
+            && comp.custom_id.as_ref().is_some_and(|id| {
                 registry.custom_components().iter().any(|d| &d.id == id && !d.ports.is_empty())
             });
 
@@ -190,11 +191,14 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
     let mut sources = vec![];
     let mut sinks: HashSet<(usize, usize)> = HashSet::new();
 
+    let mut prv_nodes: Vec<(usize, usize)> = vec![];
+
     for r in 0..grid.height {
         for c in 0..grid.width {
             if let Some(comp) = grid.get(r, c) {
                 match comp.kind {
                     ComponentKind::Source => sources.push((r, c)),
+                    ComponentKind::PressureReducingValve => prv_nodes.push((r, c)),
                     ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet => {
                         sinks.insert((r, c));
                     }
@@ -245,10 +249,6 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
             visited.insert((nr, nc));
             propagated.insert((r, c));
             result.cell_states.insert((nr, nc), FlowState::Flowing);
-            // Record flow direction into the neighbor (from parent to child).
-            let dir_r = if nr > r { 1i8 } else if nr < r { -1i8 } else { 0i8 };
-            let dir_c = if nc > c { 1i8 } else if nc < c { -1i8 } else { 0i8 };
-            result.flow_dirs.insert((nr, nc), (dir_r, dir_c));
             queue.push_back((nr, nc));
             if sinks.contains(&(nr, nc)) {
                 result.reached_sink = true;
@@ -262,6 +262,9 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
         let (r, c) = *pos;
         let kind = match grid.get(r, c) { Some(co) => co.kind, None => continue };
         if matches!(kind, ComponentKind::Source | ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet) { continue; }
+        // Gauges and meters are valid branch terminals — leave them Flowing so the solver
+        // can assign them a pressure and flow_data is populated for the footer display.
+        if matches!(kind, ComponentKind::PressureGauge | ComponentKind::FlowMeterH | ComponentKind::FlowMeterV) { continue; }
         if !propagated.contains(pos) {
             *state = FlowState::Pressurized;
             if kind == ComponentKind::BasinSink {
@@ -318,7 +321,8 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
     }
 
     // Precompute edge resistances
-    let mut edge_res: HashMap<((usize, usize), (usize, usize)), f32> = HashMap::new();
+    type EdgeKey = ((usize, usize), (usize, usize));
+    let mut edge_res: HashMap<EdgeKey, f32> = HashMap::new();
     for (&pos, neighbors) in &adjacency {
         for &nb in neighbors {
             let key = if pos <= nb { (pos, nb) } else { (nb, pos) };
@@ -336,7 +340,9 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
 
     let get_edge_r = |a: (usize, usize), b: (usize, usize)| -> f32 {
         let key = if a <= b { (a, b) } else { (b, a) };
-        *edge_res.get(&key).unwrap_or(&R_INF)
+        // Floor prevents division-by-zero in Newton-Raphson when both endpoints have
+        // zero equiv-length (e.g. Source ↔ PressureGauge). 1e-6 is effectively lossless.
+        edge_res.get(&key).unwrap_or(&R_INF).max(1e-6)
     };
 
     // Find max source pressure for initial guess
@@ -348,21 +354,32 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
     // Initialize pressures
     let mut pressures: HashMap<(usize, usize), f32> = HashMap::new();
     for &pos in &flowing_nodes {
-        let p = match grid.get(pos.0, pos.1).map(|c| c.kind) {
-            Some(ComponentKind::Source) => grid.get(pos.0, pos.1).unwrap().source_pressure_psi,
+        let comp = grid.get(pos.0, pos.1);
+        let p = match comp.map(|c| c.kind) {
+            Some(ComponentKind::Source) => comp.unwrap().source_pressure_psi,
+            Some(ComponentKind::PressureReducingValve) => comp.unwrap().prv_setpoint_psi,
             Some(ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet) => 0.0,
             _ => max_source_p * 0.5,
         };
         pressures.insert(pos, p);
     }
 
-    // Gauss-Seidel with local Newton-Raphson per interior node
-    for _iter in 0..150 {
+    // Gauss-Seidel with local Newton-Raphson per interior node.
+    // Under-relaxation (ω=0.7) stabilises looped networks that would otherwise oscillate.
+    const OMEGA: f32 = 0.7;
+    let mut converged = false;
+    for _iter in 0..200 {
         let mut max_change = 0.0_f32;
 
         for &pos in &flowing_nodes {
             let kind = grid.get(pos.0, pos.1).map(|c| c.kind);
-            if matches!(kind, Some(ComponentKind::Source) | Some(ComponentKind::Sink) | Some(ComponentKind::Toilet) | Some(ComponentKind::Faucet)) {
+            if matches!(kind,
+                Some(ComponentKind::Source)
+                | Some(ComponentKind::PressureReducingValve)
+                | Some(ComponentKind::Sink)
+                | Some(ComponentKind::Toilet)
+                | Some(ComponentKind::Faucet)
+            ) {
                 continue;
             }
             let neighbors = match adjacency.get(&pos) {
@@ -406,15 +423,52 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
                 }
             }
 
-            let change = (p - p_old).abs();
+            // Apply under-relaxation to dampen oscillations in looped networks
+            let p_relaxed = p_old + OMEGA * (p - p_old);
+            let change = (p_relaxed - p_old).abs();
             if change > max_change {
                 max_change = change;
             }
-            pressures.insert(pos, p);
+            pressures.insert(pos, p_relaxed);
         }
 
         if max_change < 0.01 {
+            converged = true;
             break;
+        }
+    }
+
+    if !converged {
+        result.warnings.push(
+            "Solver did not fully converge — results may be approximate. \
+             Check for isolated loops or highly parallel paths.".into()
+        );
+    }
+
+    // ── Post-Phase-2: Compute flow_dirs from pressure gradient ───────────────
+    // For each flowing node, find the highest-pressure neighbour (upstream).
+    // Water flows FROM that neighbour INTO this node, so direction encodes
+    // "which way did the water come from" — matching the animation convention.
+    for &pos in &flowing_nodes {
+        let p_pos = *pressures.get(&pos).unwrap_or(&0.0);
+        if let Some(neighbors) = adjacency.get(&pos) {
+            let upstream = neighbors.iter()
+                .filter(|&&nb| {
+                    *pressures.get(&nb).unwrap_or(&0.0) > p_pos + 1e-4
+                })
+                .max_by(|&&a, &&b| {
+                    pressures.get(&a).unwrap_or(&0.0)
+                        .partial_cmp(pressures.get(&b).unwrap_or(&0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+            if let Some(&(ur, uc)) = upstream {
+                let (r, c) = pos;
+                // dir_r = 1 means flow arrives from north (upstream is above)
+                let dir_r = if ur < r { 1i8 } else if ur > r { -1i8 } else { 0i8 };
+                let dir_c = if uc < c { 1i8 } else if uc > c { -1i8 } else { 0i8 };
+                result.flow_dirs.insert(pos, (dir_r, dir_c));
+            }
         }
     }
 
@@ -426,8 +480,14 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
             None => continue,
         };
 
-        // Max absolute flow on any adjacent edge ≈ throughput of this component
-        let max_flow: f32 = adjacency
+        // Sum of outflows to lower-pressure neighbours (inflows for sinks at P=0).
+        // Using outflows rather than max-edge correctly handles tees and crosses:
+        // a T-junction reports the total flow entering it (sum of both outflows ≈ inflow).
+        let is_sink = matches!(
+            comp.kind,
+            ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet
+        );
+        let flow_gpm: f32 = adjacency
             .get(&pos)
             .map(|nbs| {
                 nbs.iter()
@@ -435,24 +495,28 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
                         let p_nb = *pressures.get(&nb).unwrap_or(&0.0);
                         let r = get_edge_r(pos, nb);
                         if r >= R_INF / 2.0 {
-                            0.0_f32
-                        } else {
-                            let dp = (p - p_nb).abs().max(1e-7);
-                            (dp / r).powf(N_INV)
+                            return 0.0_f32;
                         }
+                        // sinks sum inflows; everything else sums outflows
+                        let contributing = if is_sink { p_nb > p } else { p > p_nb };
+                        if !contributing {
+                            return 0.0_f32;
+                        }
+                        let dp = (p - p_nb).abs().max(1e-7);
+                        (dp / r).powf(N_INV)
                     })
-                    .fold(0.0_f32, f32::max)
+                    .sum()
             })
             .unwrap_or(0.0);
 
         let d = comp.diameter.inner_diameter_in();
-        let velocity = if d > 0.0 { VEL_K * max_flow / (d * d) } else { 0.0 };
+        let velocity = if d > 0.0 { VEL_K * flow_gpm / (d * d) } else { 0.0 };
 
         result.flow_data.insert(
             pos,
             NodeFlowData {
                 pressure_psi: p,
-                flow_gpm: max_flow,
+                flow_gpm,
                 velocity_fps: velocity,
             },
         );
@@ -520,4 +584,147 @@ fn cell_resistance(grid: &Grid, pos: (usize, usize), viscosity_scale: f32) -> f3
     } else {
         (l_ft / denom) * viscosity_scale
     }
+}
+
+// ── DWV Validation ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default)]
+pub struct DwvResult {
+    /// Per-cell DFU accumulation (reserved for future per-pipe DFU overlay)
+    #[allow(dead_code)]
+    pub pipe_dfu: HashMap<(usize, usize), u32>,
+    /// Warning messages per fixture position
+    pub fixture_warnings: HashMap<(usize, usize), String>,
+    /// Top-level summary warnings
+    pub warnings: Vec<String>,
+    /// Total DFU load on the system
+    pub total_dfu: u32,
+    /// Whether every fixture has a P-trap within range
+    pub all_trapped: bool,
+    /// Whether at least one vent is present
+    pub has_vent: bool,
+}
+
+/// Validate DWV connectivity: P-trap presence, venting, DFU load sizing.
+/// Uses a simple BFS from each fixture drain — cheap and runs every tick.
+pub fn validate_dwv(grid: &Grid) -> DwvResult {
+    use crate::components::{ComponentKind, DrainDiameter};
+
+    let mut result = DwvResult::default();
+    let mut all_trapped = true;
+    let mut has_vent = false;
+    let mut total_dfu: u32 = 0;
+
+    // DWV connections: only DWV-kind cells connect to other DWV-kind cells
+    let dwv_neighbors = |r: usize, c: usize| -> Vec<(usize, usize)> {
+        let comp = match grid.get(r, c) { Some(c) => c, None => return vec![] };
+        let (cn, cs, ce, cw) = comp.kind.connections();
+        let mut out = vec![];
+        if cn && r > 0                       { if let Some(n) = grid.get(r-1, c) { if n.kind.is_dwv() || n.kind == ComponentKind::Sink { out.push((r-1, c)); } } }
+        if cs && r + 1 < grid.height        { if let Some(n) = grid.get(r+1, c) { if n.kind.is_dwv() || n.kind == ComponentKind::Sink { out.push((r+1, c)); } } }
+        if ce && c + 1 < grid.width         { if let Some(n) = grid.get(r, c+1) { if n.kind.is_dwv() || n.kind == ComponentKind::Sink { out.push((r, c+1)); } } }
+        if cw && c > 0                       { if let Some(n) = grid.get(r, c-1) { if n.kind.is_dwv() || n.kind == ComponentKind::Sink { out.push((r, c-1)); } } }
+        out
+    };
+
+    // Scan for vents
+    for r in 0..grid.height {
+        for c in 0..grid.width {
+            if let Some(comp) = grid.get(r, c) {
+                if comp.kind == ComponentKind::Vent {
+                    has_vent = true;
+                }
+            }
+        }
+    }
+
+    // Scan fixtures
+    for r in 0..grid.height {
+        for c in 0..grid.width {
+            let comp = match grid.get(r, c) { Some(c) => c, None => continue };
+            let dfu = comp.kind.dfu();
+            if dfu == 0 { continue; }
+
+            total_dfu += dfu;
+
+            // BFS from fixture looking for PTrap within 10 hops of DWV pipe
+            let mut found_trap = false;
+            let mut visited: HashSet<(usize, usize)> = HashSet::new();
+            let mut queue: VecDeque<(usize, usize, u32)> = VecDeque::new();
+
+            // Find adjacent DWV cells from this fixture
+            for dr in [-1i32, 0, 1] {
+                for dc in [-1i32, 0, 1] {
+                    if dr == 0 && dc == 0 { continue; }
+                    if dr != 0 && dc != 0 { continue; } // cardinal only
+                    let nr = r as i32 + dr;
+                    let nc = c as i32 + dc;
+                    if nr < 0 || nc < 0 { continue; }
+                    let nr = nr as usize; let nc = nc as usize;
+                    if let Some(n) = grid.get(nr, nc) {
+                        if n.kind.is_dwv() {
+                            queue.push_back((nr, nc, 0));
+                            visited.insert((nr, nc));
+                        }
+                    }
+                }
+            }
+
+            while let Some((nr, nc, dist)) = queue.pop_front() {
+                if dist > 10 { break; }
+                if let Some(nc_comp) = grid.get(nr, nc) {
+                    if nc_comp.kind == ComponentKind::PTrap {
+                        found_trap = true;
+                        break;
+                    }
+                    for next in dwv_neighbors(nr, nc) {
+                        if !visited.contains(&next) {
+                            visited.insert(next);
+                            queue.push_back((next.0, next.1, dist + 1));
+                        }
+                    }
+                }
+            }
+
+            if !found_trap {
+                all_trapped = false;
+                result.fixture_warnings.insert((r, c),
+                    format!("{} at ({},{}) has no P-trap within 10 cells", comp.kind.label(), r, c));
+            }
+        }
+    }
+
+    // DFU load and pipe sizing warnings
+    let mut dfu_warnings = vec![];
+    for r in 0..grid.height {
+        for c in 0..grid.width {
+            if let Some(comp) = grid.get(r, c) {
+                if matches!(comp.kind, ComponentKind::DrainH | ComponentKind::DrainV | ComponentKind::DrainWye) {
+                    // Simple: use total_dfu as the estimated load for now
+                    let required = DrainDiameter::min_for_dfu(total_dfu);
+                    if comp.drain_diameter.rank() < required.rank() {
+                        dfu_warnings.push(format!(
+                            "Drain at ({},{}) is {} but {total_dfu} DFU requires {}",
+                            r, c,
+                            comp.drain_diameter.label(),
+                            required.label()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if !has_vent && total_dfu > 0 {
+        result.warnings.push("No vent pipe found — required by code for drain systems.".into());
+    }
+    if !all_trapped {
+        result.warnings.push("One or more fixtures lack a nearby P-trap.".into());
+    }
+    result.warnings.extend(dfu_warnings.into_iter().take(3)); // cap at 3 sizing warnings
+
+    result.total_dfu = total_dfu;
+    result.all_trapped = all_trapped;
+    result.has_vent = has_vent;
+    result
 }

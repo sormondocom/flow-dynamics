@@ -45,7 +45,7 @@ pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect) {
                 i + 1,
                 path.display()
             );
-            let style = if i == app.settings_idx { hilite } else { body };
+            let style = if i == app.dialog.settings_idx { hilite } else { body };
             lines.push(Line::from(Span::styled(label, style)));
         }
     }
@@ -55,15 +55,37 @@ pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::from(""));
 
     // ── Status line ───────────────────────────────────────────────────────────
-    if !app.settings_status.is_empty() {
-        let (msg, col) = if app.settings_status.starts_with("OK") {
-            (app.settings_status.as_str(), Color::LightGreen)
+    if !app.dialog.settings_status.is_empty() {
+        let (msg, col) = if app.dialog.settings_status.starts_with("OK") {
+            (app.dialog.settings_status.as_str(), Color::LightGreen)
         } else {
-            (app.settings_status.as_str(), Color::Yellow)
+            (app.dialog.settings_status.as_str(), Color::Yellow)
         };
         lines.push(Line::from(Span::styled(msg, Style::default().fg(col))));
         lines.push(Line::from(""));
     }
+
+    // ── Grid Scale section ────────────────────────────────────────────────────
+    lines.push(Line::from(Span::styled("Grid Scale", h1)));
+    lines.push(Line::from(Span::styled(
+        "Sets what physical distance each canvas cell represents.",
+        dim,
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  Current scale: ", dim),
+        Span::styled(app.config.grid_scale_label(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw("   "),
+        key("[G]"),
+        Span::raw(" cycle"),
+    ]));
+    lines.push(Line::from(Span::styled(
+        "  New pipes placed will default to this cell length.",
+        dim,
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("────────────────────────────────", dim)));
+    lines.push(Line::from(""));
 
     // ── Config file path ──────────────────────────────────────────────────────
     lines.push(Line::from(vec![
@@ -78,6 +100,7 @@ pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect) {
         key("[D/Del]"), Span::raw("Remove  "),
         key("[↑↓]"), Span::raw("Select  "),
         key("[L]"), Span::raw("Load now  "),
+        key("[G]"), Span::raw("Scale  "),
         key("[Q/C]"), Span::styled("Close", Style::default().fg(Color::Red)),
     ]));
 

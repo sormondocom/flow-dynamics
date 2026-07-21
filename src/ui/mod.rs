@@ -1,6 +1,7 @@
 mod annotation_dialog;
 mod annotations;
 mod canvas;
+mod cost_estimator;
 mod export_dialog;
 mod file_dialog;
 mod footer;
@@ -22,37 +23,55 @@ use ratatui::{
 use crate::app::{App, AppMode};
 use crate::fluid::FluidType;
 
+/// Per-phase timings (microseconds) from a single render_canvas call.
+/// Written every frame; read by main.rs for logging.
+#[derive(Default, Clone, Copy)]
+pub struct RenderPhaseUs {
+    pub label_overlay:   u64,
+    pub flood_candidates: u64,
+    pub span_loop:        u64,
+    pub paragraph_render: u64,
+    pub scrollbars:       u64,
+    pub palette_us:       u64,
+    pub footer_us:        u64,
+}
+
 // ── Top-level router ──────────────────────────────────────────────────────────
 
-pub fn render(f: &mut Frame, app: &App) {
+pub fn render(f: &mut Frame, app: &App) -> RenderPhaseUs {
     if app.mode == AppMode::Splash {
         splash::render_splash(f, app);
-        return;
+        return RenderPhaseUs::default();
     }
 
     if app.mode == AppMode::Help {
         help::render_help(f, app);
-        return;
+        return RenderPhaseUs::default();
     }
 
     if app.mode == AppMode::FileDialog {
         file_dialog::render_file_dialog(f, app);
-        return;
+        return RenderPhaseUs::default();
     }
 
     if app.mode == AppMode::ConfirmNew {
         file_dialog::render_confirm_new(f, app);
-        return;
+        return RenderPhaseUs::default();
     }
 
     if app.mode == AppMode::ConfirmQuit {
         file_dialog::render_confirm_quit(f, app);
-        return;
+        return RenderPhaseUs::default();
     }
 
     if app.mode == AppMode::GlyphEditor {
         glyph_editor::render_glyph_editor(f, app);
-        return;
+        return RenderPhaseUs::default();
+    }
+
+    if app.mode == AppMode::CostEstimator {
+        cost_estimator::render_cost_estimator(f, app);
+        return RenderPhaseUs::default();
     }
 
     let area = f.area();
@@ -67,9 +86,15 @@ pub fn render(f: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(72), Constraint::Percentage(28)])
         .split(vchunks[0]);
 
-    canvas::render_canvas(f, app, hchunks[0]);
+    let mut timing = canvas::render_canvas(f, app, hchunks[0]);
+
+    let t_pal = std::time::Instant::now();
     palette::render_palette(f, app, hchunks[1]);
+    timing.palette_us = t_pal.elapsed().as_micros() as u64;
+
+    let t_foot = std::time::Instant::now();
     footer::render_footer(f, app, vchunks[1]);
+    timing.footer_us = t_foot.elapsed().as_micros() as u64;
 
     if app.mode == AppMode::BomView {
         overlays::render_bom(f, app, area);
@@ -95,6 +120,7 @@ pub fn render(f: &mut Frame, app: &App) {
         annotation_dialog::render_annotation_dialog(f, app, area);
     }
 
+    timing
 }
 
 // ── Shared primitives (used by multiple submodules) ───────────────────────────
@@ -174,6 +200,7 @@ pub(crate) fn format_pipe_length(ft: f32) -> String {
 
 /// Character to draw at position (dr, dc) within the inner box of a composite component.
 /// `fw`/`fh` are the box dimensions; `port_row` is the row that carries the E/W ports.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn composite_box_char(
     fw: usize, fh: usize, port_row: usize, dr: usize, dc: usize, label: &str,
     north_inlet_dc: Option<usize>,
@@ -191,10 +218,6 @@ pub(crate) fn composite_box_char(
     } else if is_port {
         if side_ports {
             match dc { 0 => '╣', c if c == fw - 1 => '╠', c => label.chars().nth(c - 1).unwrap_or(' ') }
-        } else {
-            if dc == 0 || dc + 1 == fw { '║' } else { label.chars().nth(dc - 1).unwrap_or(' ') }
-        }
-    } else {
-        if dc == 0 || dc + 1 == fw { '║' } else { ' ' }
-    }
+        } else if dc == 0 || dc + 1 == fw { '║' } else { label.chars().nth(dc - 1).unwrap_or(' ') }
+    } else if dc == 0 || dc + 1 == fw { '║' } else { ' ' }
 }

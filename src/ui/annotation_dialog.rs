@@ -12,17 +12,20 @@ use super::centered_rect_abs;
 const VIS_ROWS: usize = 3;
 
 pub(super) fn render_annotation_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    if matches!(app.input_mode, InputMode::EditingText(TextEditTarget::SourcePressure)) {
+    if matches!(app.text_input.input_mode,
+        InputMode::EditingText(TextEditTarget::SourcePressure)
+        | InputMode::EditingText(TextEditTarget::PrvSetpoint))
+    {
         render_pressure_dialog(f, app, area);
         return;
     }
-    if matches!(app.input_mode, InputMode::EditingText(TextEditTarget::LinkPath)) {
+    if matches!(app.text_input.input_mode, InputMode::EditingText(TextEditTarget::LinkPath)) {
         render_link_dialog(f, app, area);
         return;
     }
 
-    let is_note = matches!(app.input_mode, InputMode::EditingText(TextEditTarget::NoteText));
-    let is_edit = app.edit_annotation_pos.is_some();
+    let is_note = matches!(app.text_input.input_mode, InputMode::EditingText(TextEditTarget::NoteText));
+    let is_edit = app.text_input.edit_annotation_pos.is_some();
 
     let (accent, dim_bg) = if is_note {
         (Color::Rgb(80, 220, 230), Color::Rgb(0, 12, 16))
@@ -93,21 +96,23 @@ pub(super) fn render_annotation_dialog(f: &mut Frame, app: &App, area: ratatui::
 }
 
 fn render_pressure_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let is_prv = matches!(app.text_input.input_mode, InputMode::EditingText(TextEditTarget::PrvSetpoint));
     let accent = Color::Rgb(100, 180, 255);
     let dim_bg = Color::Rgb(0, 10, 20);
     let popup = centered_rect_abs(36, 7, area);
     f.render_widget(Clear, popup);
 
+    let title = if is_prv { " PRV Setpoint " } else { " Inlet Pressure " };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(accent))
-        .title(Span::styled(" Inlet Pressure ", Style::default().fg(accent).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(title, Style::default().fg(accent).add_modifier(Modifier::BOLD)))
         .style(Style::default().bg(dim_bg));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
-    let buf = &app.input_buffer;
-    let cursor_pos = app.note_cursor_pos.min(buf.len());
+    let buf = &app.text_input.input_buffer;
+    let cursor_pos = app.text_input.note_cursor_pos.min(buf.len());
     let text_style   = Style::default().fg(Color::White).bg(Color::Rgb(20, 30, 50)).add_modifier(Modifier::BOLD);
     let cursor_style = Style::default().fg(Color::Black).bg(Color::White).add_modifier(Modifier::BOLD);
 
@@ -122,9 +127,10 @@ fn render_pressure_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect)
     let field_w = (inner.width as usize).saturating_sub(12);
     let pad = field_w.saturating_sub(before.len() + 1 + after.len());
 
+    let range_label = if is_prv { "  Setpoint PSI  " } else { "  PSI (10–200)  " };
     let mut lines: Vec<Line> = vec![Line::from(Span::raw(""))];
     lines.push(Line::from(vec![
-        Span::styled("  PSI (10–200)  ", Style::default().fg(Color::Rgb(160, 160, 160))),
+        Span::styled(range_label, Style::default().fg(Color::Rgb(160, 160, 160))),
     ]));
     lines.push(Line::from(Span::raw("")));
 
@@ -150,7 +156,7 @@ fn render_pressure_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect)
 fn render_link_dialog(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let accent = Color::Rgb(255, 185, 55);
     let dim_bg = Color::Rgb(18, 12, 0);
-    let is_edit = app.edit_annotation_pos.is_some();
+    let is_edit = app.text_input.edit_annotation_pos.is_some();
     let title = if is_edit { " Edit Link Path " } else { " New Diagram Link " };
 
     let w: u16 = 64u16.min(area.width.saturating_sub(4));
@@ -191,9 +197,9 @@ fn render_label_editor(lines: &mut Vec<Line>, app: &App, inner_w: usize, accent:
     // Available width for text: inner minus 2-char indent.
     let label_w = inner_w.saturating_sub(2);
 
-    let content = &app.input_buffer;
-    let scroll_col = app.note_scroll_col;
-    let cursor_pos = app.note_cursor_pos.min(content.len());
+    let content = &app.text_input.input_buffer;
+    let scroll_col = app.text_input.note_scroll_col;
+    let cursor_pos = app.text_input.note_cursor_pos.min(content.len());
 
     let h_content = if scroll_col < content.len() { &content[scroll_col..] } else { "" };
     let h_display = &h_content[..h_content.len().min(label_w)];
@@ -271,23 +277,23 @@ fn render_label_editor(lines: &mut Vec<Line>, app: &App, inner_w: usize, accent:
 
 fn render_note_editor(lines: &mut Vec<Line>, app: &App, content_w: usize, accent: Color) {
     // ── Derive cursor position ────────────────────────────────────────────────
-    let pos = app.note_cursor_pos.min(app.input_buffer.len());
-    let before = &app.input_buffer[..pos];
+    let pos = app.text_input.note_cursor_pos.min(app.text_input.input_buffer.len());
+    let before = &app.text_input.input_buffer[..pos];
     let cursor_line = before.chars().filter(|&c| c == '\n').count();
     let cursor_col  = match before.rfind('\n') {
         Some(nl) => pos - nl - 1,
         None     => pos,
     };
 
-    let segments: Vec<&str> = if app.input_buffer.is_empty() {
+    let segments: Vec<&str> = if app.text_input.input_buffer.is_empty() {
         vec![""]
     } else {
-        app.input_buffer.split('\n').collect()
+        app.text_input.input_buffer.split('\n').collect()
     };
     let total = segments.len();
 
-    let scroll_row = app.note_scroll_row.min(total.saturating_sub(VIS_ROWS));
-    let scroll_col = app.note_scroll_col;
+    let scroll_row = app.text_input.note_scroll_row.min(total.saturating_sub(VIS_ROWS));
+    let scroll_col = app.text_input.note_scroll_col;
 
     // ── Proportional vertical scrollbar ──────────────────────────────────────
     let needs_vscroll = total > VIS_ROWS;

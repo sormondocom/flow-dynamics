@@ -44,6 +44,7 @@ impl Default for PipeDiameter {
 
 // ── Material ──────────────────────────────────────────────────────────────────
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PipeMaterial {
     #[default]
@@ -103,6 +104,60 @@ impl PipeMaterial {
     }
 }
 
+// ── Drain pipe diameter (DWV) ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DrainDiameter {
+    OneAndHalf, // 1.5" — lavatory, tub, shower
+    Two,        // 2"   — toilet in some codes, shower, kitchen sink
+    Three,      // 3"   — toilet main run, bathroom group
+    Four,       // 4"   — building drain / main stack
+}
+
+impl Default for DrainDiameter {
+    fn default() -> Self { Self::Two }
+}
+
+impl DrainDiameter {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OneAndHalf => "1½\"",
+            Self::Two        => "2\"",
+            Self::Three      => "3\"",
+            Self::Four       => "4\"",
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::OneAndHalf => Self::Two,
+            Self::Two        => Self::Three,
+            Self::Three      => Self::Four,
+            Self::Four       => Self::OneAndHalf,
+        }
+    }
+
+    pub fn is_default(&self) -> bool { *self == Self::Two }
+
+    /// Numeric rank for size comparison (higher = larger pipe).
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::OneAndHalf => 0,
+            Self::Two        => 1,
+            Self::Three      => 2,
+            Self::Four       => 3,
+        }
+    }
+
+    /// Minimum required diameter for a given DFU load (IPC Table 710.1).
+    pub fn min_for_dfu(dfu: u32) -> Self {
+        if dfu <= 3      { Self::OneAndHalf }
+        else if dfu <= 6 { Self::Two }
+        else if dfu <= 20 { Self::Three }
+        else { Self::Four }
+    }
+}
+
 // ── Drain type ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -144,6 +199,39 @@ impl DrainType {
             Self::FloorDrain => Self::Generic,
         }
     }
+}
+
+// ── Line temperature ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LineTemp {
+    #[default]
+    Unset,
+    Cold,
+    Hot,
+    Recirc,
+}
+
+impl LineTemp {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Unset  => Self::Cold,
+            Self::Cold   => Self::Hot,
+            Self::Hot    => Self::Recirc,
+            Self::Recirc => Self::Unset,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unset  => "",
+            Self::Cold   => "COLD",
+            Self::Hot    => "HOT",
+            Self::Recirc => "RECIRC",
+        }
+    }
+
+    pub fn is_unset(&self) -> bool { *self == Self::Unset }
 }
 
 // ── Valve state ───────────────────────────────────────────────────────────────
@@ -193,10 +281,19 @@ pub enum ComponentKind {
     Faucet,           // Fixture terminal: sink/faucet, E/W supply port  ≈
     BasinSink,        // Fixture: basin sink, E/W supply port + south drain port  ⊔
     SolidBlock,       // Structural element: wall/floor/ceiling, no plumbing  █
+    PressureReducingValve, // PRV — inline, clamps downstream pressure to setpoint  ⊵
+    ExpansionTank,         // Expansion tank — dead-end branch, absorbs pressure  ⊟
     Label,         // Canvas annotation: single-line text spanning empty cells to the right
     Note,          // Canvas annotation: multi-line boxed note (lines separated by \n)
     Link,          // Canvas annotation: boxed link to another diagram file
     Custom,        // User-defined — connections & glyph stored in Component / GlyphRegistry
+    // ── DWV (Drain-Waste-Vent) ────────────────────────────────────────────
+    DrainH,        // Horizontal drain pipe, E/W ports  ─
+    DrainV,        // Vertical drain pipe / stack, N/S ports  │
+    PTrap,         // P-trap — inline W→E, traps sewer gas  ⊓
+    Vent,          // Vent riser — N/S, carries to open air  ↑
+    DrainWye,      // Wye fitting — N/S run + W branch  ╁
+    Cleanout,      // Cleanout access fitting — E/W inline  ⊠
 }
 
 impl ComponentKind {
@@ -215,6 +312,11 @@ impl ComponentKind {
             // North connectivity is handled via composite_north_inlet_offset().
             // Label/Note/Link: annotation-only, zero plumbing connections.
             Self::BasinSink | Self::SolidBlock | Self::Label | Self::Note | Self::Link => (false, false, false, false),
+            Self::PressureReducingValve => (false, false, true, true), // E/W inline
+            Self::ExpansionTank => (false, true, false, false),         // south port only (branches off tee)
+            Self::DrainH | Self::PTrap | Self::Cleanout => (false, false, true, true), // E/W
+            Self::DrainV | Self::Vent => (true, true, false, false),    // N/S
+            Self::DrainWye => (true, true, false, true),                // N/S run + W branch
             Self::PipeV | Self::BallValveV | Self::CheckValveV | Self::FlowMeterV => (true, true, false, false),
             Self::ElbowNE => (true, false, true, false),
             Self::ElbowNW => (true, false, false, true),
@@ -238,7 +340,27 @@ impl ComponentKind {
             | Self::PipeH | Self::PipeV | Self::Custom
             | Self::Toilet | Self::WaterHeater | Self::Faucet | Self::BasinSink
             | Self::SolidBlock | Self::Label | Self::Note | Self::Link
+            | Self::PressureReducingValve | Self::ExpansionTank
+            | Self::DrainH | Self::DrainV | Self::PTrap | Self::Vent
+            | Self::DrainWye | Self::Cleanout
         )
+    }
+
+    /// Returns true if this is a DWV (drain-waste-vent) component.
+    pub fn is_dwv(self) -> bool {
+        matches!(self, Self::DrainH | Self::DrainV | Self::PTrap
+            | Self::Vent | Self::DrainWye | Self::Cleanout)
+    }
+
+    /// Drain Fixture Units for this fixture kind (IPC defaults).
+    pub fn dfu(self) -> u32 {
+        match self {
+            Self::Toilet    => 6,
+            Self::Faucet    => 1,
+            Self::BasinSink => 1,
+            Self::Sink      => 2, // kitchen sink
+            _ => 0,
+        }
     }
 
     pub fn is_annotation(self) -> bool {
@@ -249,7 +371,8 @@ impl ComponentKind {
     /// animation, even when Pressurized.  These components cap or monitor the pipe
     /// but don't have an open orifice that water would spray from.
     pub fn is_sealed_terminal(self) -> bool {
-        matches!(self, Self::PressureGauge | Self::EndCap | Self::FlowMeterH | Self::FlowMeterV)
+        matches!(self, Self::PressureGauge | Self::EndCap | Self::FlowMeterH | Self::FlowMeterV
+            | Self::ExpansionTank | Self::Cleanout)
     }
 
     pub fn equiv_length_diameters(self) -> f32 {
@@ -274,7 +397,14 @@ impl ComponentKind {
             Self::Faucet => 0.0,       // terminal drain — no friction loss counted
             Self::BasinSink => 5.0,    // slight friction through basin fittings
             Self::SolidBlock | Self::Label | Self::Note | Self::Link => 0.0,
+            Self::PressureReducingValve => 20.0, // typical PRV friction equiv.
+            Self::ExpansionTank => 0.0,           // dead-end branch, no through-flow
             Self::Custom => 0.0, // set per-instance via equiv_length_d in CustomCompDef
+            Self::DrainH | Self::DrainV => 0.0,  // uses pipe_length
+            Self::PTrap => 25.0,    // DWV equiv. length for P-trap
+            Self::Vent  => 0.0,     // vent — no drain flow
+            Self::DrainWye => 15.0, // wye fitting
+            Self::Cleanout => 0.0,  // cleanout cap
         }
     }
 
@@ -313,10 +443,18 @@ impl ComponentKind {
             Self::Faucet => '≈',
             Self::BasinSink => '⊔',
             Self::SolidBlock => '█',
+            Self::PressureReducingValve => '⊵',
+            Self::ExpansionTank => '⊡',
             Self::Label => '"',
             Self::Note => '†',
             Self::Link => '⇒',
             Self::Custom => '?',
+            Self::DrainH  => '─',
+            Self::DrainV  => '│',
+            Self::PTrap   => '⊓',
+            Self::Vent    => '↑',
+            Self::DrainWye => '╁',
+            Self::Cleanout => '⊠',
         }
     }
 
@@ -357,10 +495,18 @@ impl ComponentKind {
             Self::Faucet => "Faucet        ≈",
             Self::BasinSink => "Basin/Sink   ⊔",
             Self::SolidBlock => "Solid Block  █",
+            Self::PressureReducingValve => "PRV          ⊵",
+            Self::ExpansionTank => "Exp Tank     ⊡",
             Self::Label => "Label        \"",
             Self::Note => "Note         †",
             Self::Link => "Link         ⇒",
             Self::Custom => "Custom Comp  ?",
+            Self::DrainH   => "Drain Horiz  ─",
+            Self::DrainV   => "Drain Vert   │",
+            Self::PTrap    => "P-Trap       ⊓",
+            Self::Vent     => "Vent Riser   ↑",
+            Self::DrainWye => "Drain Wye    ╁",
+            Self::Cleanout => "Cleanout     ⊠",
         }
     }
 
@@ -399,10 +545,18 @@ impl ComponentKind {
             Self::Faucet => "Faucet/sink — supply fixture. Connects E or W. Acts as drain terminal. [T] cycle flow type.",
             Self::BasinSink => "Basin sink — E or W supply, south drain port. Connect drain pipe down to a drain outlet. Overflows (animated) if no drain connected.",
             Self::SolidBlock => "Structural element — wall, floor, or ceiling. No plumbing connections. Use to outline rooms.",
+            Self::PressureReducingValve => "PRV — reduces inlet pressure to setpoint. [I]/[I] adjust, [P] exact. E/W inline.",
+            Self::ExpansionTank => "Expansion tank — dead-end branch absorbs pressure surges. Required in closed systems.",
             Self::Label => "Canvas label — inline text annotation spanning empty cells. Press Enter to type. [E] to edit.",
             Self::Note => "Canvas note — multi-line note box. Use | to separate lines. Press Enter to type. [E] to edit.",
             Self::Link => "Diagram link — stores path to another .json diagram. [Enter] to follow, [E] to edit path.",
             Self::Custom => "Custom component — defined in the glyph editor [G].",
+            Self::DrainH   => "DWV horizontal drain pipe — E/W. Set diameter [D]. Shows DFU load in DWV mode.",
+            Self::DrainV   => "DWV vertical drain pipe / stack — N/S. Carries waste down to building drain.",
+            Self::PTrap    => "P-trap — prevents sewer gas backflow. Required within 5 ft of each fixture. E/W inline.",
+            Self::Vent     => "Vent riser — N/S. Carries sewer gas to open air above roofline. Must connect to vent stack.",
+            Self::DrainWye => "Drain wye (Y) fitting — N/S stack run, W horizontal tie-in branch (~15D equiv.).",
+            Self::Cleanout => "Cleanout — provides rodding access for blockage clearing. E/W inline.",
         }
     }
 
@@ -499,10 +653,19 @@ impl ComponentKind {
             Self::WaterHeater,
             Self::Faucet,
             Self::BasinSink,
+            Self::PressureReducingValve,
+            Self::ExpansionTank,
             Self::SolidBlock,
             Self::Label,
             Self::Note,
             Self::Link,
+            // DWV section
+            Self::DrainH,
+            Self::DrainV,
+            Self::PTrap,
+            Self::Vent,
+            Self::DrainWye,
+            Self::Cleanout,
         ]
     }
 }
@@ -545,7 +708,24 @@ pub struct Component {
     /// Note uses '\n' as line separator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+
+    /// Hot/cold/recirc line designation — purely visual, no sim effect.
+    #[serde(default, skip_serializing_if = "LineTemp::is_unset")]
+    pub line_temp: LineTemp,
+
+    /// Target pressure for PressureReducingValve; reuses the PSI concept from source_pressure_psi.
+    /// Default 60 PSI.  Ignored for all other kinds.
+    #[serde(default = "default_prv_setpoint", skip_serializing_if = "prv_setpoint_is_default")]
+    pub prv_setpoint_psi: f32,
+
+    /// Pipe diameter for DWV components (DrainH/V, PTrap, Vent, DrainWye, Cleanout).
+    /// Ignored for supply-side components.
+    #[serde(default, skip_serializing_if = "DrainDiameter::is_default")]
+    pub drain_diameter: DrainDiameter,
 }
+
+fn default_prv_setpoint() -> f32 { 60.0 }
+fn prv_setpoint_is_default(v: &f32) -> bool { (*v - 60.0).abs() < 0.01 }
 
 fn arm_lengths_are_zero(v: &[f32; 4]) -> bool {
     v.iter().all(|&x| x == 0.0)
@@ -572,6 +752,9 @@ impl Component {
             arm_lengths: [0.0; 4],
             color_override: None,
             text: None,
+            line_temp: LineTemp::Unset,
+            prv_setpoint_psi: 60.0,
+            drain_diameter: DrainDiameter::default(),
         }
     }
 

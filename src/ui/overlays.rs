@@ -32,7 +32,8 @@ pub(super) fn render_bom(f: &mut Frame, app: &App, area: Rect) {
 
     let mut pipe_map: BTreeMap<(String, String), (char, usize, f32)> = BTreeMap::new();
 
-    let group_defs: &[(&str, char, fn(ComponentKind) -> bool)] = &[
+    type GroupDef = (&'static str, char, fn(ComponentKind) -> bool);
+    let group_defs: &[GroupDef] = &[
         ("Source (Inlet)",  'S', |k| k == ComponentKind::Source),
         ("Drain (Outlet)",  'D', |k| k == ComponentKind::Sink),
         ("Toilet",          '○', |k| k == ComponentKind::Toilet),
@@ -58,13 +59,15 @@ pub(super) fn render_bom(f: &mut Frame, app: &App, area: Rect) {
         ("Reducer",        '◄', |k| k == ComponentKind::Reducer),
         ("Pressure Gauge", '⊙', |k| k == ComponentKind::PressureGauge),
         ("Flow Meter",     '⊗', |k| matches!(k, ComponentKind::FlowMeterH | ComponentKind::FlowMeterV)),
+        ("PRV",            '⊵', |k| k == ComponentKind::PressureReducingValve),
+        ("Expansion Tank", '⊡', |k| k == ComponentKind::ExpansionTank),
     ];
     let mut group_counts = vec![0usize; group_defs.len()];
     let mut total_comps = 0usize;
 
-    for r in 0..app.grid.height {
-        for c in 0..app.grid.width {
-            if let Some(comp) = app.grid.get(r, c) {
+    for r in 0..app.canvas.grid.height {
+        for c in 0..app.canvas.grid.width {
+            if let Some(comp) = app.canvas.grid.get(r, c) {
                 total_comps += 1;
                 match comp.kind {
                     ComponentKind::PipeH | ComponentKind::PipeV => {
@@ -95,6 +98,12 @@ pub(super) fn render_bom(f: &mut Frame, app: &App, area: Rect) {
     let total_pipe_segs: usize = pipe_map.values().map(|(_, c, _)| c).sum();
 
     let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::raw("")));
+    lines.push(Line::from(vec![
+        Span::styled("  Scale: ", dim),
+        Span::styled(app.config.grid_scale_label(), Style::default().fg(Color::Cyan)),
+        Span::styled("   [Settings → G to change]", dim),
+    ]));
     lines.push(Line::from(Span::raw("")));
 
     if !pipe_map.is_empty() {
@@ -171,7 +180,7 @@ pub(super) fn render_assembly_browser(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
-    let libs = &app.assembly_lib.assemblies;
+    let libs = &app.selection.assembly_lib.assemblies;
 
     if libs.is_empty() {
         let lines = vec![
@@ -205,7 +214,7 @@ pub(super) fn render_assembly_browser(f: &mut Frame, app: &App, area: Rect) {
     let mut selected_line: usize = 1;
 
     for (i, asm) in libs.iter().enumerate() {
-        let selected = i == app.assembly_idx;
+        let selected = i == app.selection.assembly_idx;
         if selected {
             selected_line = lines.len();
         }
@@ -238,8 +247,8 @@ pub(super) fn render_assembly_browser(f: &mut Frame, app: &App, area: Rect) {
 
     let base_lines = lines.len();
 
-    if app.assembly_idx < libs.len() {
-        let asm = &libs[app.assembly_idx];
+    if app.selection.assembly_idx < libs.len() {
+        let asm = &libs[app.selection.assembly_idx];
         let preview_h = asm.height.min(10) as u16;
 
         if inner.height > base_lines as u16 + preview_h + 2 {
@@ -314,17 +323,17 @@ pub(super) fn render_assembly_browser(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn render_component_detail(f: &mut Frame, app: &App, area: Rect) {
-    let kind = app.detail_kind;
+    let kind = app.detail.detail_kind;
     let active = app.detail_active_ports();
     let arm_lengths = app.detail_arm_lengths();
     let port_count = active.len();
 
-    let (disp_mat, disp_diam) = if app.detail_for_palette {
-        (app.selected_material, app.selected_diameter)
+    let (disp_mat, disp_diam) = if app.detail.detail_for_palette {
+        (app.pal.selected_material, app.pal.selected_diameter)
     } else {
         app.component_at_cursor()
             .map(|c| (c.material, c.diameter))
-            .unwrap_or((app.selected_material, app.selected_diameter))
+            .unwrap_or((app.pal.selected_material, app.pal.selected_diameter))
     };
     let g = app.glyph_registry.resolve(kind, disp_mat, disp_diam);
     let [sr, sg, sb] = g.fg;
@@ -334,7 +343,7 @@ pub(super) fn render_component_detail(f: &mut Frame, app: &App, area: Rect) {
     let overlay = centered_rect_abs(overlay_w, overlay_h, area);
     f.render_widget(Clear, overlay);
 
-    let title = if app.detail_for_palette {
+    let title = if app.detail.detail_for_palette {
         format!(" Default stubs: {} {} ", g.symbol, kind.label())
     } else {
         format!(" Placed: {} {}  stubs ", g.symbol, kind.label())
@@ -371,19 +380,19 @@ pub(super) fn render_component_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     for (list_idx, &(raw_port, dir_name)) in active.iter().enumerate() {
-        let selected = list_idx == app.detail_port_cursor;
+        let selected = list_idx == app.detail.detail_port_cursor;
         let arm_in = arm_lengths[raw_port] * 12.0;
         let prefix = if selected { "▶" } else { " " };
 
-        if selected && app.input_mode == InputMode::EditingLength {
-            let preview_in = app.input_buffer.parse::<f32>().unwrap_or(0.0);
+        if selected && app.text_input.input_mode == InputMode::EditingLength {
+            let preview_in = app.text_input.input_buffer.parse::<f32>().unwrap_or(0.0);
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("{prefix} {dir_name:<6} "),
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("{}|", app.input_buffer),
+                    format!("{}|", app.text_input.input_buffer),
                     Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 80)).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(

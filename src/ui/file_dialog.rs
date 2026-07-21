@@ -19,7 +19,7 @@ pub(super) fn render_file_dialog(f: &mut Frame, app: &App) {
         area,
     );
 
-    let Some(fd) = &app.file_dialog else { return };
+    let Some(fd) = &app.dialog.file_dialog else { return };
 
     let w = area.width.min(90);
     let h = area.height.saturating_sub(4).max(12);
@@ -214,7 +214,7 @@ pub(super) fn render_confirm_new(f: &mut Frame, app: &App) {
 
     f.render_widget(Clear, dialog);
 
-    let is_follow_link = app.pending_link_path.is_some();
+    let is_follow_link = app.text_input.pending_link_path.is_some();
     let title = if is_follow_link { " Follow Link " } else { " New Diagram " };
     let block = Block::default()
         .title(Span::styled(
@@ -259,7 +259,7 @@ pub(super) fn render_confirm_new(f: &mut Frame, app: &App) {
     };
 
     for (i, &(key, label, _)) in opts.iter().enumerate() {
-        let selected = app.confirm_new_choice == i;
+        let selected = app.dialog.confirm_new_choice == i;
         let cursor = if selected { "▶ " } else { "  " };
         let (key_col, label_col, bg) = if selected {
             (
@@ -347,7 +347,7 @@ pub(super) fn render_confirm_quit(f: &mut Frame, app: &App) {
     ];
 
     for (i, &(key, label)) in opts.iter().enumerate() {
-        let selected = app.confirm_quit_choice == i;
+        let selected = app.dialog.confirm_quit_choice == i;
         let cursor = if selected { "▶ " } else { "  " };
         let (key_col, label_col, bg) = if selected {
             (Color::Red, Color::Rgb(255, 200, 200), Color::Rgb(50, 10, 10))

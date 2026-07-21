@@ -21,22 +21,22 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
     };
     let border_type = if palette_focused { BorderType::Thick } else { BorderType::Plain };
 
-    let (mr, mg, mb) = GlyphRegistry::material_color(app.selected_material);
+    let (mr, mg, mb) = GlyphRegistry::material_color(app.pal.selected_material);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(border_type)
         .border_style(border_style)
         .title(format!(
             " {}  {} ",
-            app.selected_diameter.label(),
-            app.selected_material.label()
+            app.pal.selected_diameter.label(),
+            app.pal.selected_material.label()
         ));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     // Bottom section: materials + color swatches inline on the same rows.
-    let color_rows = ((COLOR_PALETTE.len() + COLOR_PALETTE_COLS - 1) / COLOR_PALETTE_COLS) as u16;
+    let color_rows = COLOR_PALETTE.len().div_ceil(COLOR_PALETTE_COLS) as u16;
     let bottom_h = 8u16.max(color_rows + 2);
 
     let chunks = Layout::default()
@@ -60,14 +60,14 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
     let hdr_len = if list_focused   { Color::Rgb(80, 140, 160)  } else { Color::Rgb(35, 65, 75) };
     let _ = colors_focused;
 
-    if app.palette_search_active {
+    if app.pal.palette_search_active {
         // ── Search bar replaces header row ────────────────────────────────────
-        let query = &app.palette_search;
+        let query = &app.pal.palette_search;
         let query_count = if query.is_empty() {
-            app.palette.len()
+            app.pal.palette.len()
         } else {
             let q = query.to_lowercase();
-            (0..app.palette.len()).filter(|&i| app.palette_item_matches(i, &q)).count()
+            (0..app.pal.palette.len()).filter(|&i| app.palette_item_matches(i, &q)).count()
         };
         let count_text = format!(" {query_count} match");
         let available_w = list_chunks[0].width as usize;
@@ -104,27 +104,27 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let visible_h = list_chunks[1].height as usize;
-    let palette_len = app.palette.len();
-    let pal_scroll = if palette_len > visible_h && app.palette_idx >= visible_h {
-        (app.palette_idx + 1).saturating_sub(visible_h).min(palette_len.saturating_sub(visible_h))
+    let palette_len = app.pal.palette.len();
+    let pal_scroll = if palette_len > visible_h && app.pal.palette_idx >= visible_h {
+        (app.pal.palette_idx + 1).saturating_sub(visible_h).min(palette_len.saturating_sub(visible_h))
     } else {
         0
     };
 
-    let search_query = if app.palette_search_active && !app.palette_search.is_empty() {
-        Some(app.palette_search.to_lowercase())
+    let search_query = if app.pal.palette_search_active && !app.pal.palette_search.is_empty() {
+        Some(app.pal.palette_search.to_lowercase())
     } else {
         None
     };
 
     let items: Vec<ListItem> = app
-        .palette
+        .pal.palette
         .iter()
         .enumerate()
         .skip(pal_scroll)
         .take(visible_h)
         .map(|(i, kind)| {
-            let custom_ci = app.palette_custom_indices.get(i).copied().flatten();
+            let custom_ci = app.pal.palette_custom_indices.get(i).copied().flatten();
             let (sym, display_label, [r, gr, b]) = if *kind == ComponentKind::Custom {
                 let customs = app.glyph_registry.custom_components();
                 if let Some(ci) = custom_ci.filter(|&ci| ci < customs.len()) {
@@ -134,17 +134,17 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
                     ('?', "Custom Comp", [150u8, 150, 150])
                 }
             } else {
-                let g = app.glyph_registry.resolve(*kind, app.selected_material, app.selected_diameter);
+                let g = app.glyph_registry.resolve(*kind, app.pal.selected_material, app.pal.selected_diameter);
                 (g.symbol, kind.label(), g.fg)
             };
-            let selected = i == app.palette_idx;
+            let selected = i == app.pal.palette_idx;
             // Dim items that don't match the active search query.
             let matches = search_query.as_ref().map(|q| app.palette_item_matches(i, q)).unwrap_or(true);
             let len_text = if matches!(kind, ComponentKind::PipeH | ComponentKind::PipeV) {
-                let in_val = (app.default_lengths.get(kind).copied().unwrap_or(1.0) * 12.0).round() as i32;
+                let in_val = (app.pal.default_lengths.get(kind).copied().unwrap_or(1.0) * 12.0).round() as i32;
                 format!("{:>3}\"", in_val)
             } else if kind.has_arm_stubs() {
-                let arm = app.default_arm_lengths.get(kind).copied().unwrap_or([0.0; 4]);
+                let arm = app.pal.default_arm_lengths.get(kind).copied().unwrap_or([0.0; 4]);
                 let (n, s, e, w) = kind.connections();
                 let dirs: [(&str, bool, f32); 4] = [("N", n, arm[0]), ("S", s, arm[1]), ("E", e, arm[2]), ("W", w, arm[3])];
                 dirs.iter()
@@ -238,15 +238,15 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
     ];
 
     let color_active       = app.selected_component_kind().supports_color_override();
-    let is_custom          = app.build_custom_rgb.is_some();
-    let palette_rows_count = (COLOR_PALETTE.len() + COLOR_PALETTE_COLS - 1) / COLOR_PALETTE_COLS;
+    let is_custom          = app.pal.build_custom_rgb.is_some();
+    let palette_rows_count = COLOR_PALETTE.len().div_ceil(COLOR_PALETTE_COLS);
 
     // Material scroll: auto-follow selected material so the list stays visible
     // when more materials are added.  Material portion is always exactly 19 chars
     // wide (4 prefix + 2 swatch + 13 label), which aligns column 20 with the
     // "│ Len" column in the component list header above.
     let data_rows        = (bottom_h as usize).saturating_sub(2); // title row + custom-hint row
-    let selected_mat_idx = ALL_MATS.iter().position(|&m| m == app.selected_material).unwrap_or(0);
+    let selected_mat_idx = ALL_MATS.iter().position(|&m| m == app.pal.selected_material).unwrap_or(0);
     let mat_scroll       = selected_mat_idx.saturating_sub(data_rows.saturating_sub(1));
 
     let mat_title_fg = if app.focus == Focus::PaletteColors {
@@ -281,7 +281,7 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
         if mat_idx < ALL_MATS.len() {
             let mat      = ALL_MATS[mat_idx];
             let (r, g, b) = GlyphRegistry::material_color(mat);
-            let selected  = mat == app.selected_material;
+            let selected  = mat == app.pal.selected_material;
             if selected {
                 mat_gap = "  ";
                 spans.push(Span::styled(
@@ -321,7 +321,7 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
                 let i = base + col;
                 if i >= COLOR_PALETTE.len() { break; }
                 let (r, g, b, _) = COLOR_PALETTE[i];
-                let sel = color_active && !is_custom && i == app.build_color_cursor;
+                let sel = color_active && !is_custom && i == app.pal.build_color_cursor;
                 let fg  = if color_active {
                     Color::Rgb(r, g, b)
                 } else {
@@ -341,7 +341,7 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
 
     // Custom hint row — blank material portion + space + hint, same column 20
     if color_active {
-        let hint = if let Some([r, g, b]) = app.build_custom_rgb {
+        let hint = if let Some([r, g, b]) = app.pal.build_custom_rgb {
             Span::styled(
                 format!("■  RGB({r},{g},{b})"),
                 Style::default().fg(Color::Rgb(r, g, b)).add_modifier(Modifier::REVERSED),

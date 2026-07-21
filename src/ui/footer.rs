@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{App, AppMode, InputMode, TextEditTarget};
-use crate::components::{ComponentKind, ValveState};
+use crate::components::{ComponentKind, LineTemp, ValveState};
 use crate::simulation::FlowState;
 
 use super::key;
@@ -33,18 +33,26 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             .glyph_registry
             .resolve(comp.kind, comp.material, comp.diameter)
             .fg;
-        lines.push(Line::from(vec![
+        let (temp_tag, temp_color) = match comp.line_temp {
+            LineTemp::Cold   => ("  ❄ COLD",   Color::Rgb(80, 160, 255)),
+            LineTemp::Hot    => ("  🔥 HOT",   Color::Rgb(255, 90, 70)),
+            LineTemp::Recirc => ("  ↺ RECIRC", Color::Rgb(255, 165, 40)),
+            LineTemp::Unset  => ("", Color::DarkGray),
+        };
+        let mut row1 = vec![
             Span::styled(
                 comp.kind.label(),
-                Style::default()
-                    .fg(Color::Rgb(mr, mg, mb))
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Rgb(mr, mg, mb)).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("  {}  {}{}", comp.diameter.label(), comp.material.label(), valve_tag),
                 Style::default().fg(Color::White),
             ),
-        ]));
+        ];
+        if !temp_tag.is_empty() {
+            row1.push(Span::styled(temp_tag, Style::default().fg(temp_color).add_modifier(Modifier::BOLD)));
+        }
+        lines.push(Line::from(row1));
 
         // Line 2 – properties / length edit overlay
         let prop_line = match comp.kind {
@@ -52,6 +60,11 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 "Inlet pressure: {:.1} PSI   [i] +1  [I] -1  [P] enter exact",
                 comp.source_pressure_psi
             ),
+            ComponentKind::PressureReducingValve => format!(
+                "PRV setpoint: {:.1} PSI   [i] +1  [I] -1  [P] enter exact",
+                comp.prv_setpoint_psi
+            ),
+            ComponentKind::ExpansionTank => "Expansion tank — dead-end branch. No setpoint needed.".to_string(),
             ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet
             | ComponentKind::BasinSink => format!(
                 "Fixture: {}   [T] cycle type",
@@ -70,6 +83,17 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                     whole_in, comp.pipe_length
                 )
             }
+            ComponentKind::DrainH | ComponentKind::DrainV => {
+                let in_total = comp.pipe_length * 12.0;
+                let whole_in = in_total.floor() as i32;
+                format!(
+                    "DWV drain {}  Length: {} in ({:.2} ft)   [+/-] 1 in  [D] diameter",
+                    comp.drain_diameter.label(), whole_in, comp.pipe_length
+                )
+            }
+            ComponentKind::PTrap | ComponentKind::Vent | ComponentKind::DrainWye | ComponentKind::Cleanout => {
+                format!("DWV {} — diameter {}   [D] cycle", comp.kind.label(), comp.drain_diameter.label())
+            }
             _ => format!(
                 "Equiv. length: {:.1} in ({:.2} ft)   [M] material   [D] diameter",
                 comp.equiv_length_ft() * 12.0,
@@ -77,15 +101,15 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             ),
         };
 
-        if app.input_mode == InputMode::EditingLength {
-            let preview_in = app.input_buffer.parse::<f32>().unwrap_or(0.0);
+        if app.text_input.input_mode == InputMode::EditingLength {
+            let preview_in = app.text_input.input_buffer.parse::<f32>().unwrap_or(0.0);
             lines.push(Line::from(vec![
                 Span::styled(
                     "Length (in): ",
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("{}|", app.input_buffer),
+                    format!("{}|", app.text_input.input_buffer),
                     Style::default()
                         .fg(Color::White)
                         .bg(Color::Rgb(40, 40, 80))
@@ -176,8 +200,8 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             format!(
                 "Ready: {}  {}  {}",
                 sel.label(),
-                app.selected_diameter.label(),
-                app.selected_material.label()
+                app.pal.selected_diameter.label(),
+                app.pal.selected_material.label()
             ),
             Style::default().fg(Color::DarkGray),
         )));
@@ -185,15 +209,15 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             sel.description(),
             Style::default().fg(Color::Rgb(70, 70, 70)),
         )));
-        if app.input_mode == InputMode::EditingLength {
-            let preview_in = app.input_buffer.parse::<f32>().unwrap_or(0.0);
+        if app.text_input.input_mode == InputMode::EditingLength {
+            let preview_in = app.text_input.input_buffer.parse::<f32>().unwrap_or(0.0);
             lines.push(Line::from(vec![
                 Span::styled(
                     "Length (in): ",
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("{}|", app.input_buffer),
+                    format!("{}|", app.text_input.input_buffer),
                     Style::default()
                         .fg(Color::White)
                         .bg(Color::Rgb(40, 40, 80))
@@ -207,7 +231,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         } else {
             let kind = app.selected_component_kind();
             if matches!(kind, ComponentKind::PipeH | ComponentKind::PipeV) {
-                let def_ft = app.default_lengths.get(&kind).copied().unwrap_or(1.0);
+                let def_ft = app.pal.default_lengths.get(&kind).copied().unwrap_or(1.0);
                 let def_in = (def_ft * 12.0).round() as i32;
                 lines.push(Line::from(vec![
                     Span::styled(format!("{} default: ", kind.label()), Style::default().fg(Color::Rgb(70, 70, 70))),
@@ -226,7 +250,32 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Warning / status line
-    let warn = if let Some(sim) = &app.sim_result {
+    let warn = if app.dwv_mode {
+        if let Some(dwv) = &app.dwv_result {
+            if dwv.warnings.is_empty() && dwv.total_dfu > 0 {
+                let ok_trap = if dwv.all_trapped { "✓ All fixtures trapped" } else { "✗ P-trap missing" };
+                let ok_vent = if dwv.has_vent { "✓ Vent present" } else { "✗ No vent!" };
+                Line::from(vec![
+                    Span::styled("DWV ", Style::default().fg(Color::Rgb(160, 110, 60)).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("{total_dfu} DFU  ", total_dfu=dwv.total_dfu), Style::default().fg(Color::White)),
+                    Span::styled(ok_trap, Style::default().fg(if dwv.all_trapped { Color::LightGreen } else { Color::Red })),
+                    Span::styled("  ", Style::default()),
+                    Span::styled(ok_vent, Style::default().fg(if dwv.has_vent { Color::LightGreen } else { Color::Yellow })),
+                ])
+            } else if !dwv.warnings.is_empty() {
+                Line::from(vec![
+                    Span::styled("DWV! ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(dwv.warnings[0].as_str(), Style::default().fg(Color::Yellow)),
+                ])
+            } else if dwv.total_dfu == 0 {
+                Line::from(Span::styled("DWV mode active — place drain pipes, P-traps, and vents. [W] exit.", Style::default().fg(Color::Rgb(120, 90, 50))))
+            } else {
+                Line::from(Span::styled("DWV OK", Style::default().fg(Color::LightGreen)))
+            }
+        } else {
+            Line::from(Span::styled("DWV mode active. [W] exit.", Style::default().fg(Color::Rgb(120, 90, 50))))
+        }
+    } else if let Some(sim) = &app.sim.sim_result {
         if sim.warnings.is_empty() {
             if sim.reached_sink {
                 Line::from(Span::styled(
@@ -251,8 +300,8 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         ))
     };
 
-    if app.pending_annotation.is_some() {
-        let (label, color) = if matches!(app.pending_annotation, Some((ComponentKind::Note, _))) {
+    if app.text_input.pending_annotation.is_some() {
+        let (label, color) = if matches!(app.text_input.pending_annotation, Some((ComponentKind::Note, _))) {
             ("Note", Color::Rgb(80, 220, 230))
         } else {
             ("Label", Color::Rgb(255, 230, 60))
@@ -265,7 +314,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::styled("[Esc]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::raw(" cancel"),
         ]));
-    } else if let InputMode::EditingText(target) = app.input_mode {
+    } else if let InputMode::EditingText(target) = app.text_input.input_mode {
         let prompt = match target {
             TextEditTarget::AssemblyName  => "Assembly name: ",
             TextEditTarget::AddGlyphFile  => "Glyph file path: ",
@@ -277,7 +326,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled(prompt, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    format!("{}|", app.input_buffer),
+                    format!("{}|", app.text_input.input_buffer),
                     Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 80)).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled("  [Enter] confirm  [Esc] cancel", Style::default().fg(Color::Gray)),
@@ -286,7 +335,22 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             lines.push(warn);
         }
     } else {
-        lines.push(warn);
+        let u = app.undo.undo_count();
+        let r = app.undo.redo_count();
+        let undo_fg = if u > 0 { Color::Rgb(80, 140, 230) } else { Color::Rgb(45, 45, 65) };
+        let redo_fg = if r > 0 { Color::Rgb(70, 200, 130) } else { Color::Rgb(45, 45, 65) };
+        let mut w = warn;
+        w.spans.push(Span::styled("   ↩ ", Style::default().fg(undo_fg)));
+        w.spans.push(Span::styled(
+            u.to_string(),
+            Style::default().fg(undo_fg).add_modifier(Modifier::BOLD),
+        ));
+        w.spans.push(Span::styled("  ↪ ", Style::default().fg(redo_fg)));
+        w.spans.push(Span::styled(
+            r.to_string(),
+            Style::default().fg(redo_fg).add_modifier(Modifier::BOLD),
+        ));
+        lines.push(w);
     }
 
     // Key bindings — two rows, context-sensitive
@@ -304,6 +368,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 key("[L]"), Span::raw("Len=? "),
                 key("[T]"), Span::raw("Drain "),
                 key("[I]"), Span::raw("Pressure "),
+                key("[H]"), Span::raw("Hot/Cold "),
                 key("[G]"), Span::raw("Glyphs"),
             ]));
             lines.push(Line::from(vec![
@@ -317,11 +382,13 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 key("[N]"), Span::raw("New "),
                 key("[A]"), Span::raw("Ann "),
                 key("[B]"), Span::raw("BOM "),
+                key("[$]"), Span::raw("Cost "),
+                key("[W]"), Span::raw("DWV "),
                 key("[R]"), Span::raw("Select "),
                 key("[Y]"), Span::raw("Assem "),
                 key("[C]"), Span::raw("Settings "),
                 key("[P]"), Span::styled("Sim  ", Style::default().fg(Color::LightGreen)),
-                key("[H]"), Span::raw("Help "),
+                key("[?]"), Span::raw("Help "),
                 key("[Q]"), Span::styled("Quit", Style::default().fg(Color::Red)),
             ]));
         }
@@ -374,7 +441,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 key("[Spc]"), Span::styled("Pause  ", Style::default().fg(Color::Yellow)),
                 key("[S]"), Span::styled("Stop  ", Style::default().fg(Color::Red)),
                 key("[P]"), Span::styled("Restart Sim  ", Style::default().fg(Color::LightGreen)),
-                key("[H]"), Span::raw("Help "),
+                key("[?]"), Span::raw("Help "),
                 key("[Q]"), Span::styled("Quit", Style::default().fg(Color::Red)),
             ]));
         }
@@ -395,7 +462,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 key("[Spc]"), Span::styled("Resume  ", Style::default().fg(Color::LightGreen)),
                 key("[S]"), Span::styled("Stop  ", Style::default().fg(Color::Red)),
                 key("[P]"), Span::styled("Restart Sim  ", Style::default().fg(Color::LightGreen)),
-                key("[H]"), Span::raw("Help "),
+                key("[?]"), Span::raw("Help "),
                 key("[Q]"), Span::styled("Quit", Style::default().fg(Color::Red)),
             ]));
         }
@@ -412,8 +479,18 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 key("[↑↓]"), Span::raw("Scroll   "),
                 key("[PgUp/PgDn]"), Span::raw("Page   "),
                 key("[Home/End]"), Span::raw("Top / Bottom   "),
-                key("[H]"), Span::raw(" / "),
+                key("[?]"), Span::raw(" / "),
                 key("[Esc]"), Span::styled("  Close Help", Style::default().fg(Color::Red)),
+            ]));
+            lines.push(Line::from(Span::raw("")));
+        }
+        AppMode::CostEstimator => {
+            lines.push(Line::from(vec![
+                key("[↑↓]"), Span::raw("Navigate "),
+                key("[Enter/E]"), Span::raw("Edit price "),
+                key("[$]"), Span::raw(" / "),
+                key("[Q]"), Span::raw(" / "),
+                key("[Esc]"), Span::styled("  Close", Style::default().fg(Color::Red)),
             ]));
             lines.push(Line::from(Span::raw("")));
         }

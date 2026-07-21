@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use ratatui::{
     layout::Rect,
@@ -14,10 +15,46 @@ use crate::fluid::FluidType;
 use crate::glyphs::GlyphRegistry;
 use crate::simulation::FlowState;
 
-use super::{composite_box_char, fluid_bg, fluid_fg, scale_rgb};
+use super::{composite_box_char, fluid_bg, fluid_fg, scale_rgb, RenderPhaseUs};
 use super::annotations::compute_annotations;
 
-pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
+/// Pre-flattened view of SimResult for O(1) per-cell access during rendering.
+/// Built once per frame from the sim HashMaps; avoids ~6 k hash lookups in the
+/// inner render loop, which matters most on lower-spec machines.
+struct SimFlat {
+    w:      usize,
+    states: Vec<FlowState>,     // [grid_h * grid_w], default Static
+    flow:   Vec<(f32, f32)>,    // (gpm, velocity_fps)
+    dirs:   Vec<(i8,  i8)>,     // flow direction
+}
+
+impl SimFlat {
+    fn build(sim: &crate::simulation::SimResult, grid_h: usize, grid_w: usize) -> Self {
+        let n = grid_h * grid_w;
+        let mut states = vec![FlowState::Static; n];
+        let mut flow   = vec![(0.0f32, 0.0f32); n];
+        let mut dirs   = vec![(0i8, 0i8); n];
+        for (&(r, c), &s) in &sim.cell_states {
+            if r < grid_h && c < grid_w { states[r * grid_w + c] = s; }
+        }
+        for (&(r, c), fd) in &sim.flow_data {
+            if r < grid_h && c < grid_w { flow[r * grid_w + c] = (fd.flow_gpm, fd.velocity_fps); }
+        }
+        for (&(r, c), &d) in &sim.flow_dirs {
+            if r < grid_h && c < grid_w { dirs[r * grid_w + c] = d; }
+        }
+        Self { w: grid_w, states, flow, dirs }
+    }
+
+    #[inline(always)]
+    fn state(&self, r: usize, c: usize) -> FlowState { self.states[r * self.w + c] }
+    #[inline(always)]
+    fn flow_gpm_vel(&self, r: usize, c: usize) -> (f32, f32) { self.flow[r * self.w + c] }
+    #[inline(always)]
+    fn flow_dir(&self, r: usize, c: usize) -> (i8, i8) { self.dirs[r * self.w + c] }
+}
+
+pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) -> RenderPhaseUs {
     use crate::app::Focus;
     use ratatui::widgets::{Block, Borders, BorderType};
 
@@ -47,6 +84,7 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
         AppMode::ConfirmQuit      => "QUIT?",
         AppMode::ExportDialog     => "EXPORT",
         AppMode::AnnotationDialog => "LABEL/NOTE",
+        AppMode::CostEstimator    => "COST",
     };
 
     let block = Block::default()
@@ -55,8 +93,8 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
         .border_style(border_style)
         .title(format!(
             " Flow Dynamics  [{mode_label}]  {}  col:{} row:{} ",
-            app.fluid_type.label(),
-            app.cursor.1, app.cursor.0
+            app.sim.fluid_type.label(),
+            app.canvas.cursor.1, app.canvas.cursor.0
         ));
 
     let inner = block.inner(area);
@@ -64,7 +102,9 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
 
     let viewport_h = inner.height as usize;
     let viewport_w = inner.width as usize;
-    let (vr, vc) = app.viewport;
+    let (vr, vc) = app.canvas.viewport;
+
+    let t_start = Instant::now();
 
     let annotations: HashMap<(usize, usize), (char, Style)> = if app.show_annotations {
         compute_annotations(app)
@@ -72,13 +112,13 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
         HashMap::new()
     };
 
-    let sel_rect = app.select_start.map(|s| {
-        let e = app.cursor;
+    let sel_rect = app.selection.select_start.map(|s| {
+        let e = app.canvas.cursor;
         (s.0.min(e.0), s.1.min(e.1), s.0.max(e.0), s.1.max(e.1))
     });
 
-    let cursor_anchor = app.grid.effective_pos(app.cursor.0, app.cursor.1);
-    let cursor_is_composite = app.grid.get(cursor_anchor.0, cursor_anchor.1)
+    let cursor_anchor = app.canvas.grid.effective_pos(app.canvas.cursor.0, app.canvas.cursor.1);
+    let cursor_is_composite = app.canvas.grid.get(cursor_anchor.0, cursor_anchor.1)
         .map(|c| c.effective_is_composite())
         .unwrap_or(false);
 
@@ -94,14 +134,14 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
         let link_style  = Style::default().fg(Color::Rgb(255, 185, 55)).add_modifier(Modifier::BOLD);
 
         let cell_empty = |r: usize, c: usize| {
-            app.grid.get(r, c).is_none() && app.grid.satellite_anchor(r, c).is_none()
+            app.canvas.grid.get(r, c).is_none() && app.canvas.grid.satellite_anchor(r, c).is_none()
         };
 
         for sr in 0..viewport_h {
             let gr = vr + sr;
             for sc in 0..viewport_w {
                 let gc = vc + sc;
-                if let Some(comp) = app.grid.get(gr, gc) {
+                if let Some(comp) = app.canvas.grid.get(gr, gc) {
                     match comp.kind {
                         ComponentKind::Label => {
                             if let Some(text) = &comp.text {
@@ -214,7 +254,7 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                                 }
 
                                 // [E]dit hint on the row above when cursor is on this note.
-                                if app.cursor == (gr, gc) && gr > vr {
+                                if app.canvas.cursor == (gr, gc) && gr > vr {
                                     let edit_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
                                     for (hi, ch) in ['[', 'E', ']', 'd', 'i', 't'].iter().enumerate() {
                                         let col = gc + hi;
@@ -268,11 +308,11 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                                     }
                                     let chars: Vec<char> = path_text.chars().collect();
                                     let mut ok = true;
-                                    for ci in 0..text_w {
+                                    for (ci, &ch) in chars.iter().enumerate().take(text_w) {
                                         let col = gc + 2 + ci;
                                         if col >= vc + viewport_w { ok = false; break; }
                                         if !cell_empty(row, col) { ok = false; break; }
-                                        label_overlay.insert((row, col), (chars[ci], link_style));
+                                        label_overlay.insert((row, col), (ch, link_style));
                                     }
                                     let rpad = gc + text_w + 2;
                                     if ok && rpad < vc + viewport_w && cell_empty(row, rpad) {
@@ -318,7 +358,7 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                             }
 
                             // [Enter]/[E] hint above anchor when cursor is here.
-                            if app.cursor == (gr, gc) && gr > vr {
+                            if app.canvas.cursor == (gr, gc) && gr > vr {
                                 let hint_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
                                 for (hi, ch) in ['[', 'E', ']', 'e', 'd', 'i', 't', ' ', 'p', 'a', 't', 'h'].iter().enumerate() {
                                     let col = gc + hi;
@@ -335,8 +375,8 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
         }
 
         // Pending annotation preview: spread text at cursor as if already placed.
-        if let Some((kind, text)) = &app.pending_annotation {
-            let (cr, cc) = app.cursor;
+        if let Some((kind, text)) = &app.text_input.pending_annotation {
+            let (cr, cc) = app.canvas.cursor;
             match kind {
                 ComponentKind::Label => {
                     let mut ok = true;
@@ -511,22 +551,85 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
         }
     }
 
+    let t_after_label = Instant::now();
+
+    // Pre-compute which empty viewport cells show the flood animation.
+    // Scanning outward from the small set of Pressurized cells is far cheaper than
+    // checking all 4 neighbors inside the inner render loop for every empty cell.
+    let flood_candidates: std::collections::HashSet<(usize, usize)> = {
+        let mut set = std::collections::HashSet::new();
+        if let Some(sim) = &app.sim.sim_result {
+            for (&(ar, ac), state) in &sim.cell_states {
+                if *state != FlowState::Pressurized { continue; }
+                let Some(comp) = app.canvas.grid.get(ar, ac) else { continue };
+                if comp.effective_is_composite() || comp.kind.is_sealed_terminal() { continue; }
+                let c = comp.connections();
+                // (row offset, col offset, connection-open flag)
+                for (dr, dc, open) in [(-1i32, 0i32, c.0), (1, 0, c.1), (0, 1, c.2), (0, -1, c.3)] {
+                    if !open { continue; }
+                    let nr = ar as i32 + dr;
+                    let nc = ac as i32 + dc;
+                    if nr < 0 || nc < 0 { continue; }
+                    let (nr, nc) = (nr as usize, nc as usize);
+                    if nr < vr || nr >= vr + viewport_h || nc < vc || nc >= vc + viewport_w { continue; }
+                    if nr >= app.canvas.grid.height || nc >= app.canvas.grid.width { continue; }
+                    if app.canvas.grid.get(nr, nc).is_some() { continue; }
+                    if app.canvas.grid.satellite_anchor(nr, nc).is_some() { continue; }
+                    set.insert((nr, nc));
+                }
+            }
+        }
+        set
+    };
+
+    let t_after_flood = Instant::now();
+
+    // Build the flat sim cache once per frame — Vec index is ~10× faster than
+    // HashMap lookup with tuple keys, which is critical on slower machines.
+    let sim_flat: Option<SimFlat> = app.sim.sim_result.as_ref().map(|sim| {
+        SimFlat::build(sim, app.canvas.grid.height, app.canvas.grid.width)
+    });
+
+    let flood_style = Style::default().fg(Color::Rgb(55, 140, 255)).bg(Color::Rgb(0, 15, 45));
+    let dot_style   = Style::default().fg(Color::Rgb(35, 35, 35));
+
     let mut lines: Vec<Line> = Vec::with_capacity(viewport_h);
 
     for screen_row in 0..viewport_h {
         let grid_row = vr + screen_row;
-        let mut spans: Vec<Span> = Vec::with_capacity(viewport_w);
+        // Smaller initial cap — most rows have far fewer spans than cells thanks to batching.
+        let mut spans: Vec<Span> = Vec::with_capacity(viewport_w / 4 + 4);
+        // Batch consecutive empty-dot cells into one span to reduce ratatui's internal work.
+        let mut dot_run: usize = 0;
+
+        macro_rules! flush_dots {
+            () => {
+                if dot_run > 0 {
+                    // One allocation covers the whole run; cheaper on slow machines than N
+                    // individual Span pushes, and ratatui processes far fewer spans per row.
+                    let mut s = String::with_capacity(dot_run * 2); // "·" is 2 bytes UTF-8
+                    for _ in 0..dot_run { s.push('·'); }
+                    spans.push(Span::styled(s, dot_style));
+                    dot_run = 0;
+                }
+            };
+        }
+
         for screen_col in 0..viewport_w {
             let grid_col = vc + screen_col;
-            let is_cursor = app.cursor == (grid_row, grid_col);
-            let cell_anchor = app.grid.effective_pos(grid_row, grid_col);
+            let is_cursor = app.canvas.cursor == (grid_row, grid_col);
+
+            let sat_anchor = app.canvas.grid.satellite_anchor(grid_row, grid_col);
+            let cell_comp  = app.canvas.grid.get(grid_row, grid_col);
+            let cell_anchor = sat_anchor.unwrap_or((grid_row, grid_col));
+            let is_satellite = sat_anchor.is_some();
             let effective_cursor = is_cursor
                 || (cursor_is_composite && cell_anchor == cursor_anchor);
 
             // ── Stamp ghost overlay ───────────────────────────────────────
             if app.mode == AppMode::Stamping {
-                if let Some(asm) = &app.pending_stamp {
-                    let (cr, cc) = app.cursor;
+                if let Some(asm) = &app.selection.pending_stamp {
+                    let (cr, cc) = app.canvas.cursor;
                     if grid_row >= cr && grid_col >= cc {
                         let ar = grid_row - cr;
                         let ac = grid_col - cc;
@@ -550,14 +653,17 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                                     g.symbol
                                 }
                             };
+                            flush_dots!();
                             spans.push(Span::styled(ch.to_string(), ghost_style));
                             continue;
                         }
                         if let Some(ch) = asm.annotation_ghost_char(ar, ac) {
+                            flush_dots!();
                             spans.push(Span::styled(ch.to_string(), ghost_style));
                             continue;
                         }
                         if let Some(ch) = asm.composite_ghost_char(ar, ac) {
+                            flush_dots!();
                             spans.push(Span::styled(ch.to_string(), ghost_style));
                             continue;
                         }
@@ -570,69 +676,71 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
                 if grid_row >= r0 && grid_row <= r1 && grid_col >= c0 && grid_col <= c1 {
                     let is_edge = grid_row == r0 || grid_row == r1
                         || grid_col == c0 || grid_col == c1;
-                    let sel_bg = if is_edge {
-                        Color::Rgb(40, 60, 20)
-                    } else {
-                        Color::Rgb(20, 35, 10)
-                    };
-                    // For empty overlay cells (label/note text), preserve the annotation
-                    // character and tint it so it remains readable through the selection.
-                    let is_grid_empty = app.grid.get(grid_row, grid_col).is_none()
-                        && app.grid.satellite_anchor(grid_row, grid_col).is_none();
-                    if is_grid_empty {
+                    let sel_bg = if is_edge { Color::Rgb(40, 60, 20) } else { Color::Rgb(20, 35, 10) };
+                    if cell_comp.is_none() && !is_satellite {
                         if let Some(&(lch, lstyle)) = label_overlay.get(&(grid_row, grid_col)) {
+                            flush_dots!();
                             spans.push(Span::styled(lch.to_string(), lstyle.bg(sel_bg)));
                             continue;
                         }
                     }
-                    let (ch, style) = cell_char_and_style(app, grid_row, grid_col, effective_cursor);
+                    flush_dots!();
+                    let (ch, style) = cell_char_and_style(app, sim_flat.as_ref(), grid_row, grid_col, effective_cursor, sat_anchor, cell_comp);
                     spans.push(Span::styled(ch.to_string(), style.bg(sel_bg)));
                     continue;
                 }
             }
 
             // ── Composite ghost footprint preview ─────────────────────────
-            // Show the full composite box for the selected component before it
-            // is placed, so the user can see the exact footprint and port positions.
-            if app.mode == AppMode::Build
-                && app.grid.get(grid_row, grid_col).is_none()
-                && app.grid.satellite_anchor(grid_row, grid_col).is_none()
-            {
+            if app.mode == AppMode::Build && cell_comp.is_none() && !is_satellite {
                 if let Some((ch, style)) = composite_ghost_cell(app, grid_row, grid_col) {
+                    flush_dots!();
                     spans.push(Span::styled(ch.to_string(), style));
                     continue;
                 }
             }
 
             // ── Normal cell ───────────────────────────────────────────────
-            let is_satellite = app.grid.satellite_anchor(grid_row, grid_col).is_some();
-            let span = if !effective_cursor
-                && app.grid.get(grid_row, grid_col).is_none()
-                && !is_satellite
-            {
+            if !effective_cursor && cell_comp.is_none() && !is_satellite {
                 if let Some(&(lch, lstyle)) = label_overlay.get(&(grid_row, grid_col)) {
-                    Span::styled(lch.to_string(), lstyle)
+                    flush_dots!();
+                    spans.push(Span::styled(lch.to_string(), lstyle));
                 } else if let Some(&(ach, astyle)) = annotations.get(&(grid_row, grid_col)) {
-                    Span::styled(ach.to_string(), astyle)
-                } else if let Some((fch, fstyle)) = flood_cell(app, grid_row, grid_col) {
-                    Span::styled(fch.to_string(), fstyle)
+                    flush_dots!();
+                    spans.push(Span::styled(ach.to_string(), astyle));
+                } else if flood_candidates.contains(&(grid_row, grid_col)) {
+                    let phase = (app.tick as usize)
+                        .wrapping_add(grid_row.wrapping_mul(3))
+                        .wrapping_add(grid_col.wrapping_mul(7)) % 4;
+                    flush_dots!();
+                    spans.push(Span::styled(['~', '≈', '~', ' '][phase].to_string(), flood_style));
                 } else {
-                    Span::styled("·".to_string(), Style::default().fg(Color::Rgb(35, 35, 35)))
+                    dot_run += 1; // accumulate into current run — no allocation here
                 }
             } else {
-                let (ch, style) = cell_char_and_style(app, grid_row, grid_col, effective_cursor);
-                Span::styled(ch.to_string(), style)
-            };
-            spans.push(span);
+                flush_dots!();
+                let (ch, style) = cell_char_and_style(app, sim_flat.as_ref(), grid_row, grid_col, effective_cursor, sat_anchor, cell_comp);
+                spans.push(Span::styled(ch.to_string(), style));
+            }
+        }
+        // Inline flush (no reset — dot_run goes out of scope after this row).
+        if dot_run > 0 {
+            let mut s = String::with_capacity(dot_run * 2);
+            for _ in 0..dot_run { s.push('·'); }
+            spans.push(Span::styled(s, dot_style));
         }
         lines.push(Line::from(spans));
     }
 
+    let t_after_loop = Instant::now();
+
     f.render_widget(Paragraph::new(lines), inner);
 
+    let t_after_para = Instant::now();
+
     // ── Scrollbars ────────────────────────────────────────────────────────────
-    let grid_h = app.grid.height;
-    let grid_w = app.grid.width;
+    let grid_h = app.canvas.grid.height;
+    let grid_w = app.canvas.grid.width;
 
     // Vertical scrollbar on the right edge
     if grid_h > viewport_h && viewport_h > 1 {
@@ -675,78 +783,49 @@ pub(super) fn render_canvas(f: &mut Frame, app: &App, area: Rect) {
             );
         }
     }
-}
 
-/// Returns an animated "water leak" character and style for an empty cell that
-/// is adjacent to a flowing pipe component with an open (unconnected) end toward it.
-fn flood_cell(app: &App, gr: usize, gc: usize) -> Option<(char, Style)> {
-    let sim = app.sim_result.as_ref()?;
-    // connections() returns (N=0, S=1, E=2, W=3)
-    // For each direction d, check the neighbor at (gr+dr, gc+dc).
-    // The neighbor must have its opposite-facing connection set to true.
-    let checks: &[(i32, i32, usize)] = &[
-        (-1, 0, 1), // N neighbor — its S connection (idx 1) points toward (gr,gc)
-        ( 1, 0, 0), // S neighbor — its N connection (idx 0)
-        ( 0,-1, 2), // W neighbor — its E connection (idx 2)
-        ( 0, 1, 3), // E neighbor — its W connection (idx 3)
-    ];
-    for &(dr, dc, conn_idx) in checks {
-        let nr = gr as i32 + dr;
-        let nc = gc as i32 + dc;
-        if nr < 0 || nc < 0 { continue; }
-        let (nr, nc) = (nr as usize, nc as usize);
-        if nr >= app.grid.height || nc >= app.grid.width { continue; }
-        // Resolve satellite to anchor for component + flow lookup.
-        let (ar, ac) = app.grid.satellite_anchor(nr, nc).unwrap_or((nr, nc));
-        let Some(comp) = app.grid.get(ar, ac) else { continue };
-        // Skip all composites (built-in and custom) — composite borders are vessel walls,
-        // not pipe openings. effective_is_composite() catches Custom composites too.
-        if comp.effective_is_composite() { continue; }
-        // Skip sealed passive terminals (gauge, endcap) — they cap or monitor the pipe
-        // but don't have an open orifice that water would spray from.
-        if comp.kind.is_sealed_terminal() { continue; }
-        // Only flood from Pressurized cells (the BFS dead-end state).
-        // Flowing cells are inline components with at least one connected neighbor;
-        // their unused connection faces are not open pipe ends.
-        // Pressurized = reached from Source but never propagated onward → true open end.
-        if sim.cell_states.get(&(ar, ac)) != Some(&FlowState::Pressurized) { continue; }
-        let conns = comp.connections();
-        let conn_arr = [conns.0, conns.1, conns.2, conns.3];
-        if conn_arr[conn_idx] {
-            // Stagger phase per cell so not all flood cells pulse in sync.
-            let phase = (app.tick as usize)
-                .wrapping_add(gr.wrapping_mul(3))
-                .wrapping_add(gc.wrapping_mul(7)) % 4;
-            let ch = ['~', '≈', '~', ' '][phase];
-            let style = Style::default()
-                .fg(Color::Rgb(55, 140, 255))
-                .bg(Color::Rgb(0, 15, 45));
-            return Some((ch, style));
-        }
+    let t_end = Instant::now();
+    RenderPhaseUs {
+        label_overlay:    t_after_label.duration_since(t_start).as_micros() as u64,
+        flood_candidates: t_after_flood.duration_since(t_after_label).as_micros() as u64,
+        span_loop:        t_after_loop.duration_since(t_after_flood).as_micros() as u64,
+        paragraph_render: t_after_para.duration_since(t_after_loop).as_micros() as u64,
+        scrollbars:       t_end.duration_since(t_after_para).as_micros() as u64,
+        palette_us:       0,
+        footer_us:        0,
     }
-    None
 }
 
-fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (char, Style) {
+
+#[allow(clippy::too_many_arguments)]
+fn cell_char_and_style<'a>(
+    app: &'a App,
+    sim_flat: Option<&SimFlat>,
+    row: usize,
+    col: usize,
+    is_cursor: bool,
+    sat_anchor: Option<(usize, usize)>,
+    cell_comp: Option<&'a crate::components::Component>,
+) -> (char, Style) {
     // ── Satellite cell (part of a composite component) ────────────────────
-    if let Some((ar, ac)) = app.grid.satellite_anchor(row, col) {
-        if let Some(comp) = app.grid.get(ar, ac) {
+    if let Some((ar, ac)) = sat_anchor {
+        if let Some(comp) = app.canvas.grid.get(ar, ac) {
             let pr = comp.effective_port_row();
             let (fw, fh) = comp.effective_footprint();
             let dr = row.wrapping_add(pr).wrapping_sub(ar);
             let dc = col.wrapping_sub(ac);
             let label = comp.effective_composite_label();
             let base_ch = cell_override_or_default(app, comp, dr, dc, fw, fh, pr, label);
-            let ch = composite_animated_char(app, comp, dr, dc, fw, fh, pr, base_ch, ar, ac);
-            let style = composite_style(app, ar, ac, comp, dr, dc, fw, fh, is_cursor);
+            let ch = composite_animated_char(app, sim_flat, comp, dr, dc, fw, fh, pr, base_ch, ar, ac);
+            let style = composite_style(app, sim_flat, ar, ac, comp, dr, dc, fw, fh, is_cursor);
             return (ch, style);
         }
     }
 
-    let Some(comp) = app.grid.get(row, col) else {
+    let Some(comp) = cell_comp else {
         if is_cursor {
             // If an annotation is pending placement, show its bracket regardless of palette.
-            if let Some((ann_kind, _)) = &app.pending_annotation {
+            if let Some((ann_kind, _)) = &app.text_input.pending_annotation {
                 let (anchor_ch, [pr, pg, pb], bg) = match ann_kind {
                     ComponentKind::Label => ('[',  [255u8, 230, 60], Color::Rgb(60, 55, 0)),
                     ComponentKind::Note  => ('*',  [80u8, 220, 230], Color::Rgb(0, 45, 55)),
@@ -770,7 +849,7 @@ fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (c
             } else if kind.supports_color_override() {
                 (kind.symbol(), app.selected_build_color())
             } else {
-                let g = app.glyph_registry.resolve(kind, app.selected_material, app.selected_diameter);
+                let g = app.glyph_registry.resolve(kind, app.pal.selected_material, app.pal.selected_diameter);
                 (g.symbol, g.fg)
             };
             return (sym, Style::default().bg(Color::Rgb(50, 50, 50)).fg(Color::Rgb(pr, pg, pb)));
@@ -814,8 +893,8 @@ fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (c
         let pr = comp.effective_port_row();
         let label = comp.effective_composite_label();
         let base_ch = cell_override_or_default(app, comp, pr, 0, fw, fh, pr, label);
-        let ch = composite_animated_char(app, comp, pr, 0, fw, fh, pr, base_ch, row, col);
-        let style = composite_style(app, row, col, comp, pr, 0, fw, fh, is_cursor);
+        let ch = composite_animated_char(app, sim_flat, comp, pr, 0, fw, fh, pr, base_ch, row, col);
+        let style = composite_style(app, sim_flat, row, col, comp, pr, 0, fw, fh, is_cursor);
         return (ch, style);
     }
 
@@ -831,7 +910,7 @@ fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (c
         return ('X', style);
     }
 
-    let (ch, fg, bg_opt) = cell_appearance(app, comp, row, col, glyph.symbol, mr, mg, mb);
+    let (ch, fg, bg_opt) = cell_appearance(app, sim_flat, comp, row, col, glyph.symbol, mr, mg, mb);
 
     let mut style = Style::default().fg(fg);
     if let Some(bg) = bg_opt {
@@ -840,6 +919,26 @@ fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (c
     if matches!(comp.kind, ComponentKind::Source | ComponentKind::Sink) {
         style = style.add_modifier(Modifier::BOLD);
     }
+
+    // Hot/cold tint in build mode (sim colors already encoded in fg/bg above).
+    if sim_flat.is_none() && !is_cursor {
+        use crate::components::LineTemp;
+        style = match comp.line_temp {
+            LineTemp::Cold  => style.fg(Color::Rgb(80, 160, 255)),
+            LineTemp::Hot   => style.fg(Color::Rgb(255, 90, 70)),
+            LineTemp::Recirc => style.fg(Color::Rgb(255, 165, 40)),
+            LineTemp::Unset => style,
+        };
+        // DWV components always render in a distinct warm-brown to stand out from supply
+        if comp.kind.is_dwv() {
+            style = match comp.kind {
+                crate::components::ComponentKind::PTrap    => style.fg(Color::Rgb(230, 200, 60)),
+                crate::components::ComponentKind::Vent     => style.fg(Color::Rgb(100, 200, 100)),
+                _ => style.fg(Color::Rgb(160, 110, 60)),
+            };
+        }
+    }
+
     if is_cursor {
         if ch == '█' {
             // '█' fills the entire cell with fg; black fg would make it invisible.
@@ -852,41 +951,49 @@ fn cell_char_and_style(app: &App, row: usize, col: usize, is_cursor: bool) -> (c
     (ch, style)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cell_appearance(
     app: &App,
+    sim_flat: Option<&SimFlat>,
     comp: &crate::components::Component,
     row: usize,
     col: usize,
     base_ch: char,
     mr: u8, mg: u8, mb: u8,
 ) -> (char, Color, Option<Color>) {
-    let fluid = app.fluid_type;
+    let fluid = app.sim.fluid_type;
     let f_bg  = fluid_bg(fluid);
     let f_fg  = fluid_fg(fluid);
 
-    if let Some(sim) = &app.sim_result {
-        match sim.cell_states.get(&(row, col)) {
-            Some(FlowState::Flowing) => {
-                let gpm = sim.flow_data
-                    .get(&(row, col))
-                    .map(|fd| fd.flow_gpm)
-                    .unwrap_or(0.0);
+    if let Some(sf) = sim_flat {
+        match sf.state(row, col) {
+            FlowState::Flowing => {
+                let (gpm, velocity) = sf.flow_gpm_vel(row, col);
 
                 match comp.kind {
                     ComponentKind::Source => (base_ch, Color::LightGreen, None),
                     ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet
                     | ComponentKind::BasinSink => (base_ch, Color::LightMagenta, None),
+                    ComponentKind::PressureGauge => {
+                        // Keep ⊙ visible; gold glow on fluid background signals an active gauge reading
+                        (base_ch, Color::Rgb(220, 200, 60), Some(f_bg))
+                    }
                     ComponentKind::FlowMeterH | ComponentKind::FlowMeterV => {
                         // Keep ⊗ symbol visible; teal glow on fluid background signals active metering
                         (base_ch, Color::Rgb(60, 200, 180), Some(f_bg))
                     }
                     _ => {
-                        let period: usize =
-                            if gpm > 5.0 { 3 } else if gpm > 2.0 { 4 } else { 6 };
+                        // Packet density: tighter spacing at higher flow rates
+                        let period: usize = if gpm > 5.0 { 3 } else if gpm > 2.0 { 4 } else { 6 };
                         let slow_tick = (app.tick / 4) as usize;
-                        let move_frame = (app.tick / 2) as usize;
+                        // Packet scroll speed proportional to velocity: every N ticks advance one cell
+                        let move_divisor: u64 = if velocity >= 5.0 { 1 }
+                            else if velocity >= 3.0 { 2 }
+                            else if velocity >= 1.0 { 3 }
+                            else { 5 };
+                        let move_frame = (app.tick / move_divisor) as usize;
                         let pos = flow_pos(comp.kind, row, col);
-                        let flow_dir = sim.flow_dirs.get(&(row, col)).copied().unwrap_or((0, 0));
+                        let flow_dir = sf.flow_dir(row, col);
                         let reversed = match comp.kind {
                             ComponentKind::PipeH | ComponentKind::BallValveH
                             | ComponentKind::CheckValveH | ComponentKind::Reducer => flow_dir.1 < 0,
@@ -919,12 +1026,12 @@ fn cell_appearance(
                     }
                 }
             }
-            Some(FlowState::Pressurized) => {
+            FlowState::Pressurized => {
                 let (fr, fg2, fb) = fluid.fg_color();
                 let dim = scale_rgb(fr, fg2, fb, 0.3);
                 (base_ch, dim, Some(f_bg))
             }
-            _ => (base_ch, Color::Rgb(70, 70, 70), None),
+            FlowState::Static => (base_ch, Color::Rgb(70, 70, 70), None),
         }
     } else {
         let color = match comp.kind {
@@ -944,8 +1051,10 @@ fn cell_appearance(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn composite_style(
     app: &App,
+    sim_flat: Option<&SimFlat>,
     ar: usize,
     ac: usize,
     comp: &crate::components::Component,
@@ -962,49 +1071,47 @@ fn composite_style(
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD);
     }
-    if let Some(sim) = &app.sim_result {
-        let state = sim.cell_states.get(&(ar, ac));
+    if let Some(sf) = sim_flat {
+        let state = sf.state(ar, ac);
         match comp.kind {
             ComponentKind::BasinSink => match state {
-                Some(FlowState::Pressurized) => {
-                    // Overflow: bright fluid color (not the usual dim) to convey urgency
-                    let (fr, fg2, fb) = app.fluid_type.fg_color();
+                FlowState::Pressurized => {
+                    let (fr, fg2, fb) = app.sim.fluid_type.fg_color();
                     let bright = scale_rgb(fr, fg2, fb, 1.4);
-                    Style::default().fg(bright).bg(fluid_bg(app.fluid_type))
+                    Style::default().fg(bright).bg(fluid_bg(app.sim.fluid_type))
                 }
-                Some(FlowState::Flowing) => {
+                FlowState::Flowing => {
                     let fg = scale_rgb(r, g, b, 1.3);
-                    Style::default().fg(fg).bg(fluid_bg(app.fluid_type))
+                    Style::default().fg(fg).bg(fluid_bg(app.sim.fluid_type))
                 }
                 _ => Style::default().fg(Color::Rgb(r, g, b)),
             },
             ComponentKind::WaterHeater => match state {
-                Some(FlowState::Flowing) => {
-                    // Interior cells: warm orange glow for hot-water heating
+                FlowState::Flowing => {
                     let is_interior = dr > 0 && dr + 1 < fh && dc > 0 && dc + 1 < fw;
                     if is_interior {
                         Style::default().fg(Color::Rgb(220, 120, 40)).bg(Color::Rgb(30, 15, 5))
                     } else {
                         let fg = scale_rgb(r, g, b, 1.3);
-                        Style::default().fg(fg).bg(fluid_bg(app.fluid_type))
+                        Style::default().fg(fg).bg(fluid_bg(app.sim.fluid_type))
                     }
                 }
-                Some(FlowState::Pressurized) => {
-                    let (fr, fg2, fb) = app.fluid_type.fg_color();
+                FlowState::Pressurized => {
+                    let (fr, fg2, fb) = app.sim.fluid_type.fg_color();
                     let dim = scale_rgb(fr, fg2, fb, 0.3);
-                    Style::default().fg(dim).bg(fluid_bg(app.fluid_type))
+                    Style::default().fg(dim).bg(fluid_bg(app.sim.fluid_type))
                 }
                 _ => Style::default().fg(Color::Rgb(r, g, b)),
             },
             _ => match state {
-                Some(FlowState::Flowing) => {
+                FlowState::Flowing => {
                     let fg = scale_rgb(r, g, b, 1.3);
-                    Style::default().fg(fg).bg(fluid_bg(app.fluid_type))
+                    Style::default().fg(fg).bg(fluid_bg(app.sim.fluid_type))
                 }
-                Some(FlowState::Pressurized) => {
-                    let (fr, fg2, fb) = app.fluid_type.fg_color();
+                FlowState::Pressurized => {
+                    let (fr, fg2, fb) = app.sim.fluid_type.fg_color();
                     let dim = scale_rgb(fr, fg2, fb, 0.3);
-                    Style::default().fg(dim).bg(fluid_bg(app.fluid_type))
+                    Style::default().fg(dim).bg(fluid_bg(app.sim.fluid_type))
                 }
                 _ => Style::default().fg(Color::Rgb(r, g, b)),
             },
@@ -1014,6 +1121,7 @@ fn composite_style(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cell_override_or_default(
     app: &App,
     comp: &crate::components::Component,
@@ -1051,8 +1159,10 @@ fn cell_override_or_default(
 /// Handles both static shape characters and animated overlay for specific composite
 /// component kinds.  Called after `cell_override_or_default` so it receives the
 /// base box-drawing character as `default_ch` and only changes positions it owns.
+#[allow(clippy::too_many_arguments)]
 fn composite_animated_char(
     app: &App,
+    sim_flat: Option<&SimFlat>,
     comp: &crate::components::Component,
     dr: usize,
     dc: usize,
@@ -1063,10 +1173,7 @@ fn composite_animated_char(
     anchor_r: usize,
     anchor_c: usize,
 ) -> char {
-    let flow = app
-        .sim_result
-        .as_ref()
-        .and_then(|sim| sim.cell_states.get(&(anchor_r, anchor_c)).cloned());
+    let flow = sim_flat.map(|sf| sf.state(anchor_r, anchor_c));
     let tick = app.tick as usize;
 
     match comp.kind {
@@ -1132,7 +1239,7 @@ fn composite_animated_char(
                 // Left tank
                 if dc == 1  { return if is_top { '┌' } else { '└' }; }
                 if dc == 5  { return if is_top { '┐' } else { '┘' }; }
-                if dc >= 2 && dc <= 4 {
+                if (2..=4).contains(&dc) {
                     if let Some(FlowState::Flowing) = &flow {
                         return ['~', '─', '·', '─'][(tick / 4 + dc) % 4];
                     }
@@ -1148,7 +1255,7 @@ fn composite_animated_char(
                 // Right tank
                 if dc == 11 { return if is_top { '┌' } else { '└' }; }
                 if dc == 15 { return if is_top { '┐' } else { '┘' }; }
-                if dc >= 12 && dc <= 14 {
+                if (12..=14).contains(&dc) {
                     if let Some(FlowState::Flowing) = &flow {
                         return ['~', '─', '·', '─'][(tick / 4 + dc) % 4];
                     }
@@ -1282,7 +1389,7 @@ fn composite_ghost_cell(app: &App, row: usize, col: usize) -> Option<(char, Styl
     use super::composite_box_char;
 
     let kind = app.selected_component_kind();
-    let (cursor_r, cursor_c) = app.cursor;
+    let (cursor_r, cursor_c) = app.canvas.cursor;
 
     // ── Custom composite ──────────────────────────────────────────────────────
     if kind == ComponentKind::Custom {

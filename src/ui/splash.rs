@@ -28,7 +28,7 @@ pub(super) fn render_splash(f: &mut Frame, app: &App) {
         area,
     );
 
-    let bw = (area.width.saturating_sub(8) as usize).min(72).max(50);
+    let bw = (area.width.saturating_sub(8) as usize).clamp(50, 72);
     let bh = 16usize;
     let bx = area.x as usize + (area.width as usize).saturating_sub(bw) / 2;
     let by = area.y as usize + (area.height as usize).saturating_sub(bh) / 2;
@@ -90,14 +90,14 @@ pub(super) fn render_splash(f: &mut Frame, app: &App) {
     let inner_w = bw.saturating_sub(2);
     let logo_h  = bh.saturating_sub(4); // rows available for the logo (12)
 
-    if let Some(grid) = &app.splash_grid {
+    if let Some(grid) = &app.sim.splash_grid {
         render_splash_grid(f, app, grid, inner_x, inner_y, inner_w, logo_h);
     } else {
         render_fallback(f, inner_x, inner_y, inner_w, logo_h, tick);
     }
 
     // ── "Press any key" prompt ────────────────────────────────────────────────
-    let pulse = if (tick / 4) % 2 == 0 { 255u8 } else { 155u8 };
+    let pulse = if (tick / 4).is_multiple_of(2) { 255u8 } else { 155u8 };
     f.render_widget(
         Paragraph::new(Span::styled(
             "Press any key to begin",
@@ -169,7 +169,7 @@ fn render_splash_grid(
             }
 
             // Check if this cell is Flowing in the simulation result.
-            let flow_state = app.splash_sim.as_ref()
+            let flow_state = app.sim.splash_sim.as_ref()
                 .and_then(|sim| sim.cell_states.get(&(r, c)).cloned());
 
             let (ch, style) = if flow_state == Some(FlowState::Flowing) {
@@ -315,7 +315,7 @@ fn render_fallback(
 ) {
     let mid_y = inner_y + inner_h / 2;
 
-    let title_col = if (tick / 6) % 2 == 0 { Color::Cyan } else { Color::Rgb(80, 185, 255) };
+    let title_col = if (tick / 6).is_multiple_of(2) { Color::Cyan } else { Color::Rgb(80, 185, 255) };
     f.render_widget(
         Paragraph::new(Span::styled(
             "FLOW DYNAMICS",

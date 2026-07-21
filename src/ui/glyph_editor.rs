@@ -93,7 +93,7 @@ fn render_editor_component_list(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, &kind)| {
-            let g = app.glyph_registry.resolve(kind, app.selected_material, app.selected_diameter);
+            let g = app.glyph_registry.resolve(kind, app.pal.selected_material, app.pal.selected_diameter);
             let sym = g.symbol;
             let [r, gr, b] = g.fg;
             let label = format!("{sym} {}", kind.label());
@@ -377,7 +377,7 @@ fn render_editor_status(f: &mut Frame, app: &App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    if let InputMode::EditingText(target) = app.input_mode {
+    if let InputMode::EditingText(target) = app.text_input.input_mode {
         let prompt = match target {
             TextEditTarget::SaveLibrary    => "Save library to file: ",
             TextEditTarget::LoadLibrary    => "Load library from file: ",
@@ -390,12 +390,12 @@ fn render_editor_status(f: &mut Frame, app: &App, area: Rect) {
             TextEditTarget::CustomRgb      => "Custom RGB (R,G,B): ",
             TextEditTarget::BuildCustomRgb => "",
             TextEditTarget::LabelText | TextEditTarget::NoteText | TextEditTarget::SourcePressure
-            | TextEditTarget::LinkPath => "",
+            | TextEditTarget::PrvSetpoint | TextEditTarget::LinkPath | TextEditTarget::CostPrice => "",
         };
         lines.push(Line::from(vec![
             Span::styled(prompt, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("{}|", app.input_buffer),
+                format!("{}|", app.text_input.input_buffer),
                 Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 80)).add_modifier(Modifier::BOLD),
             ),
             Span::styled("  [Enter] confirm  [Esc] cancel", Style::default().fg(Color::Gray)),

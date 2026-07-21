@@ -394,9 +394,14 @@ impl GlyphLibrary {
 
 // ── Runtime registry ──────────────────────────────────────────────────────────
 
+#[derive(Clone)]
 pub struct GlyphRegistry {
     pub library: GlyphLibrary,
     pub library_path: Option<PathBuf>,
+}
+
+impl Default for GlyphRegistry {
+    fn default() -> Self { Self::new() }
 }
 
 impl GlyphRegistry {
@@ -568,11 +573,19 @@ pub fn kind_key(k: ComponentKind) -> &'static str {
         ComponentKind::WaterHeater       => "WaterHeater",
         ComponentKind::Faucet            => "Faucet",
         ComponentKind::BasinSink         => "BasinSink",
-        ComponentKind::SolidBlock        => "SolidBlock",
-        ComponentKind::Label             => "Label",
-        ComponentKind::Note              => "Note",
-        ComponentKind::Link              => "Link",
-        ComponentKind::Custom            => "Custom",
+        ComponentKind::SolidBlock             => "SolidBlock",
+        ComponentKind::PressureReducingValve  => "PressureReducingValve",
+        ComponentKind::ExpansionTank          => "ExpansionTank",
+        ComponentKind::Label                  => "Label",
+        ComponentKind::Note                   => "Note",
+        ComponentKind::Link                   => "Link",
+        ComponentKind::Custom                 => "Custom",
+        ComponentKind::DrainH                 => "DrainH",
+        ComponentKind::DrainV                 => "DrainV",
+        ComponentKind::PTrap                  => "PTrap",
+        ComponentKind::Vent                   => "Vent",
+        ComponentKind::DrainWye               => "DrainWye",
+        ComponentKind::Cleanout               => "Cleanout",
     }
 }
 
@@ -702,7 +715,7 @@ impl GlyphEditorState {
     pub fn nav_char(&mut self, dr: isize, dc: isize) {
         let total = CHAR_PALETTE.len();
         let cols  = CHAR_PALETTE_COLS as isize;
-        let rows  = ((total + CHAR_PALETTE_COLS - 1) / CHAR_PALETTE_COLS) as isize;
+        let rows  = total.div_ceil(CHAR_PALETTE_COLS) as isize;
         let row = (self.char_cursor as isize / cols + dr).rem_euclid(rows);
         let col = (self.char_cursor as isize % cols + dc).rem_euclid(cols);
         self.char_cursor = ((row * cols + col) as usize).min(total - 1);
@@ -712,7 +725,7 @@ impl GlyphEditorState {
         self.custom_rgb = None; // switching to palette clears any custom color
         let total = COLOR_PALETTE.len();
         let cols  = COLOR_PALETTE_COLS as isize;
-        let rows  = ((total + COLOR_PALETTE_COLS - 1) / COLOR_PALETTE_COLS) as isize;
+        let rows  = total.div_ceil(COLOR_PALETTE_COLS) as isize;
         let row = (self.color_cursor as isize / cols + dr).rem_euclid(rows);
         let col = (self.color_cursor as isize % cols + dc).rem_euclid(cols);
         self.color_cursor = ((row * cols + col) as usize).min(total - 1);

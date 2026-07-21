@@ -4,13 +4,13 @@ Flow Dynamics is a pipe network designer and fluid flow simulator.
 Draw plumbing layouts on the canvas, run the simulation to watch fluid travel
 from Source to Sink, and save reusable sub-systems as named assemblies.
 
-Press [H] at any time to open or close this screen.
+Press [?] at any time to open or close this screen.
 
 ---
 
 # Global Keys
 
-[H]         Open / close this help screen (hot-reloads help.txt each open)
+[?]         Open / close this help screen (hot-reloads help.txt each open)
 [Q]         Quit the application
 [Ctrl+C]    Force quit
 [Tab]       Switch focus between Canvas ↔ Palette panels
@@ -23,14 +23,16 @@ Press [H] at any time to open or close this screen.
 [P]         Play  — run the simulation
 [S]         Stop  — return to Build mode  (from Simulating or Paused)
 [Space]     Pause / resume simulation
-[B]         Bill of Materials overlay
+[B]         Bill of Materials (BOM) overlay
+[$]         Cost Estimator — full-screen material pricing and cost total
+[W]         Toggle Drain-Waste-Vent (DWV) mode — switch to drain plumbing layout
 [G]         Open Glyph Editor
 [C]         Open Settings screen  (glyph file auto-load list, config)
 [X]         Export diagram  — opens the Export dialog (Text or JSON)
 [Y]         Open Assembly Browser
 [R]         Start rectangle selection (save a region as an assembly)
 [A]         Toggle dimension annotations on pipes
-[1]–[6]    Select material directly (Copper / PEX / GalvanizedIron / PE / BlackPlastic / CastIron)
+[1]–[6]    Select material directly (Copper / PEX / Galvanized Iron / PE / Black Plastic / Cast Iron)
 
 ---
 
@@ -51,12 +53,30 @@ The Canvas is the main drawing area.  Focus it with [Tab].
 [V]           Toggle valve open / closed at the cursor
 [M]           Cycle pipe material at the cursor
 [D]           Cycle pipe diameter  (½" → ¾" → 1")
-[T]           Cycle drain / sink type at the cursor
-[+] / [=]    Increase pipe length  +1 ft  (hold Shift: +6 in)
-[-]           Decrease pipe length  -1 ft  (hold Shift: -6 in)
+              When the cursor is on a Drain-Waste-Vent (DWV) component,
+              cycles the drain pipe diameter instead (1½" → 2" → 3" → 4")
+[T]           Cycle drain / fixture type at the cursor
+[H]           Cycle line temperature marking — Cold / Hot / Recirculation / Unset
+              Applies a color tint to supply pipes for visual clarity (no simulation effect)
+[+] / [=]    Increase pipe length  +1 in  (hold Shift: +6 in)
+[-]           Decrease pipe length  -1 in  (hold Shift: -6 in)
 [L]           Enter exact pipe length  (e.g. `12'6"`)
-[I]           Increase source pressure  +10 psi
-[Shift+I]     Decrease source pressure  -10 psi
+[I]           Increase source or Pressure Reducing Valve (PRV) setpoint  +1 psi
+[Shift+I]     Decrease source or Pressure Reducing Valve (PRV) setpoint  -1 psi
+[P]           When cursor is on a Source or Pressure Reducing Valve (PRV):
+              opens a dialog to enter the exact pressure in psi
+              Otherwise: runs the simulation (same as global [P])
+
+## Line Temperature Marking
+
+Hot/Cold marking is a visual-only label applied to supply pipes and fittings.
+It does not change simulation results — it is purely a drafting aid to help you
+read a complex diagram at a glance.
+
+[H]     Cycle through: Cold (blue tint) → Hot (red tint) → Recirculation (orange tint) → Unset
+
+The marking shows in the canvas and is saved with the layout.
+The footer shows a badge (❄ COLD, 🔥 HOT, ↺ RECIRC) when the cursor is on a marked component.
 
 ## Annotations
 
@@ -128,7 +148,7 @@ selected (custom glyph components).  Focus cycles to it via [Tab].
 [Arrow]           Navigate the color swatch grid (Up / Down / Left / Right)
 [Home]            Jump to the first material in the material list
 [End]             Jump to the last material in the material list
-[E]               Enter a custom RGB color  (type R, G, B values at the prompt)
+[E]               Enter a custom Red-Green-Blue (RGB) color  (type R, G, B values at the prompt)
 [M]               Cycle the material scope for this color override
 
 ---
@@ -242,14 +262,235 @@ Undo is available in Build, Simulating, and Paused modes.
 Every placement, deletion, valve toggle, material cycle, length adjustment,
 pressure change, assembly stamp, and new-diagram action is tracked.
 
+The footer shows ↩ (undo steps available) and ↪ (redo steps available) at all times.
+
 ---
 
-# Bill of Materials
+# Bill of Materials (BOM)
 
 Press [B] to open.  Lists every component on the canvas with its material,
-diameter, and pipe length.  Useful for estimating material quantities.
+diameter, and pipe length.  Useful for estimating material quantities before
+purchasing supplies.
 
-[Q] / [B]   Close the BOM overlay
+The header shows the current grid scale so you can compare pipe segment
+counts to real-world lengths.
+
+[Q] / [B]   Close the Bill of Materials overlay
+
+---
+
+# Cost Estimator
+
+Press [$] to open.  Shows a full-screen pricing screen where you can enter
+material costs per foot for pipe and per-unit costs for fittings, then see
+a live estimated total based on what is actually placed on the canvas.
+
+## Left Panel — Price List
+
+The left side lists every pipe type (material and diameter combination) and
+every fitting / fixture type with its current price.
+
+[↑] / [↓]       Navigate the price list
+[PageUp]         Scroll up 10 rows
+[PageDown]       Scroll down 10 rows
+[Home]           Jump to the first row
+[End]            Jump to the last row
+[Enter] / [E]    Edit the price for the selected row
+                 Type a dollar value and press [Enter] to confirm, or [Esc] to cancel
+
+## Right Panel — Estimated Cost
+
+The right side recalculates in real time from the current canvas:
+  • Pipe costs — each material/diameter group × price per foot × total length
+  • Fitting costs — each component type × unit price × count on canvas
+  • Grand total at the bottom
+
+Prices are saved automatically to `flow-dynamics.config.json` so they persist
+between sessions.
+
+[$] / [Q] / [Esc]   Close the Cost Estimator
+
+---
+
+# Settings Screen
+
+Press [C] to open.  Manages persistent configuration stored in
+`flow-dynamics.config.json` alongside your layouts.
+
+## Grid Scale
+
+Sets how many inches one canvas grid cell represents.  Affects the default
+pipe lengths when placing pipe segments and the scale note shown in the
+Bill of Materials (BOM).
+
+Available scales:
+  6 in / cell   (½ ft — tight quarters, bathroom rough-in)
+  12 in / cell  (1 ft  — default, typical residential layout)
+  18 in / cell  (1½ ft — larger floor plans)
+  24 in / cell  (2 ft  — whole-house overview)
+
+[G]   Cycle through the available grid scales
+      The change takes effect immediately and is saved automatically.
+
+## Glyph Library Files
+
+A list of `.json` glyph library files loaded automatically at startup, in
+order.  Later entries override earlier ones for the same component / material /
+diameter key, so you can layer a project-specific file on top of a base library.
+
+[↑↓]              Select a file in the list
+[PageUp / PageDn]  Jump 10 entries at a time
+[Home]             Jump to the first entry
+[End]              Jump to the last entry
+[A]               Add a file path  (opens a text prompt; the file is also loaded immediately)
+[D/Del]           Remove the selected entry from the list  (does not delete the file on disk)
+[L]               Reload the selected file right now without restarting
+
+After any change the updated config is saved to disk automatically.
+
+[C] / [Q] / [Esc]   Close the Settings screen
+
+---
+
+# Drain-Waste-Vent (DWV) Mode
+
+Drain-Waste-Vent is the branch of plumbing that carries used water away from
+fixtures by gravity, rather than under pressure.  Every fixture — toilet, sink,
+shower, and tub — connects to the drain system, which flows downhill to the
+main building drain and out to the sewer or septic tank.  Vent pipes run up
+and out through the roof to let air into the drain pipes so water drains
+freely and sewer gases escape safely instead of backing up into the home.
+
+Press [W] from Build mode to toggle Drain-Waste-Vent (DWV) mode on or off.
+
+When DWV mode is active:
+  • The footer shows a DWV status bar with a total fixture load in
+    Drain Fixture Units (DFU) — a standardized measure of how much drain
+    flow capacity each fixture type requires
+  • A checkmark (✓) confirms every fixture has a P-trap nearby
+  • A checkmark (✓) confirms at least one vent pipe is present
+  • Warnings appear if code-required items are missing
+  • Drain-Waste-Vent (DWV) components render in warm brown and green so they
+    stand out from the blue/red/orange supply-side pipes
+
+DWV components and supply components can coexist on the same canvas — a
+realistic layout will have both.
+
+## P-Trap  ⊓
+
+A P-trap (named for its P-shape) is a U-shaped bend built into the drain line
+just below every fixture.  It holds a small amount of water that acts as a
+plug, blocking sewer gases from rising back up through the drain opening.
+Building codes require a P-trap within a few feet of every fixture drain.
+
+E/W ports (inline with horizontal drain pipe).
+Press [D] to cycle drain diameter.
+
+## Vent  ↑
+
+A vent pipe connects to the drain system and runs up through the wall and
+roof to open air.  It serves two purposes: it admits air so water flows
+freely without creating a vacuum, and it routes sewer gases (hydrogen
+sulfide, methane) harmlessly above the building instead of into living spaces.
+
+N/S ports (vertical riser).  Renders in green to distinguish from drain pipes.
+
+## Drain Pipe Horizontal  ─
+
+A horizontal drain pipe segment.  Drain pipes are sized by the total
+Drain Fixture Unit (DFU) load they must carry, rather than by pressure.
+Standard residential drain pipes run at a ¼" drop per foot of horizontal run
+so gravity keeps water moving.
+
+E/W ports.  Press [D] to cycle drain diameter: 1½", 2", 3", 4".
+
+## Drain Pipe Vertical (Stack)  │
+
+A vertical drain pipe or drain stack.  The main stack collects waste from
+all floors and carries it down to the building drain at the bottom.
+
+N/S ports.  Press [D] to cycle drain diameter.
+
+## Drain Wye  ╁
+
+A wye (Y-fitting) is the standard way to connect a horizontal branch drain
+into a vertical stack or another horizontal run.  The angled entry reduces
+turbulence and risk of clogging compared to a sharp tee fitting.
+
+N/S run ports + W branch port.  Press [D] to cycle diameter.
+
+## Cleanout  ⊠
+
+A cleanout is a capped fitting installed at strategic points — typically at
+the base of the stack, near each toilet, and at changes of direction.  It
+provides a threaded or plug-style opening that a plumber can remove to run
+a drain snake (a flexible cable tool) through the pipe to clear blockages.
+
+E/W ports (inline).  Acts as a sealed terminal — does not count as a drain outlet.
+
+## Drain Pipe Sizing
+
+International Plumbing Code (IPC) minimum pipe diameter by Drain Fixture Unit (DFU) load:
+
+  1½"  — up to 3 DFU  (lavatory / small sink)
+  2"   — up to 6 DFU  (toilet, shower, kitchen sink)
+  3"   — up to 20 DFU (toilet group, bathroom cluster)
+  4"   — up to 180 DFU (building drain, main stack)
+
+Flow Dynamics will warn you if a pipe's selected diameter appears undersized
+for the total fixture load connected to the canvas.
+
+## Default Drain Fixture Unit (DFU) Values
+
+  Toilet         6 DFU
+  Kitchen Sink   2 DFU
+  Faucet/Sink    1 DFU
+  Basin Sink     1 DFU
+
+---
+
+# Pressure Reducing Valve (PRV)  ⊵
+
+A Pressure Reducing Valve (PRV) is an inline fitting that automatically reduces
+high incoming water pressure to a safe, consistent level for household use.
+Municipal water mains often deliver water at 80–150 psi — much higher than
+the 40–80 psi recommended for household fixtures and appliances.  A PRV
+protects pipes, faucets, washing machines, and water heaters from excessive
+pressure that can cause leaks, banging pipes (water hammer), or premature
+failure.
+
+In Flow Dynamics, the PRV acts as a fixed-pressure boundary: water downstream
+of the PRV is held at the setpoint pressure regardless of upstream conditions.
+
+Place the PRV inline on a horizontal supply run (East/West ports).
+
+## Setting the Setpoint
+
+[I]           Increase setpoint  +1 psi
+[Shift+I]     Decrease setpoint  -1 psi
+[P]           Open dialog to type an exact setpoint in psi
+
+The footer shows the current setpoint when the cursor is on a PRV.
+Default setpoint: 60 psi.  Typical residential target: 40–65 psi.
+
+---
+
+# Expansion Tank  ⊡
+
+An expansion tank is a small pressurized vessel installed on the cold-water
+supply line, usually near the water heater.  When a Pressure Reducing Valve (PRV)
+or a check valve is present in the system, the system becomes "closed" — water
+that expands as it heats up has nowhere to go, which can cause a dangerous
+pressure spike.  The expansion tank provides a cushion of air separated from
+the water by a rubber bladder, absorbing that thermal expansion safely.
+
+Codes in most jurisdictions require an expansion tank whenever a PRV or check
+valve creates a closed system.
+
+In Flow Dynamics, the expansion tank is a dead-end branch component (South port
+only).  Connect it off a Tee fitting on the cold-water supply line near the
+water heater.  It is a sealed terminal — it does not count as a drain and will
+not trigger flood warnings.
 
 ---
 
@@ -275,8 +516,8 @@ display character and color, or define entirely new multi-cell custom components
 ## Custom RGB Color
 
 [E]    Open a color prompt when the Color picker panel is focused.
-       Type three comma-separated values (0–255) for R, G, B and press [Enter].
-       Moving to any palette swatch clears the custom color.
+       Type three comma-separated values (0–255) for Red, Green, Blue (R,G,B)
+       and press [Enter].  Moving to any palette swatch clears the custom color.
 
 ## Composite Port Assignment
 
@@ -341,31 +582,6 @@ Open from the Palette panel with [L] when a Tee, Cross, or similar is selected.
 
 ---
 
-# Settings Screen
-
-Press [C] to open.  Manages persistent configuration stored in
-`flow-dynamics.config.json` alongside your layouts.
-
-## Glyph Library Files
-
-A list of `.json` glyph library files loaded automatically at startup, in
-order.  Later entries override earlier ones for the same component / material /
-diameter key, so you can layer a project-specific file on top of a base library.
-
-[↑↓]              Select a file in the list
-[PageUp / PageDn]  Jump 10 entries at a time
-[Home]             Jump to the first entry
-[End]              Jump to the last entry
-[A]               Add a file path  (opens a text prompt; the file is also loaded immediately)
-[D/Del]           Remove the selected entry from the list  (does not delete the file on disk)
-[L]               Reload the selected file right now without restarting
-
-After any change the updated config is saved to disk automatically.
-
-[C] / [Q] / [Esc]   Close the Settings screen
-
----
-
 # Help Screen
 
 This screen.  Loaded from `help.txt` in the working directory.
@@ -374,7 +590,7 @@ This screen.  Loaded from `help.txt` in the working directory.
 [PgUp/PgDn]   Scroll one page at a time
 [Home]         Jump to the top of the help text
 [End]          Jump to the bottom of the help text
-[H] / [Esc]   Close this screen
+[?] / [Esc]   Close this screen
 
 ## Help Search
 
@@ -384,7 +600,7 @@ This screen.  Loaded from `help.txt` in the working directory.
 [Esc]         Clear search
 
 Edit `help.txt` in any text editor to add your own notes.
-Changes take effect the next time you press [H] — no restart needed.
+Changes take effect the next time you press [?] — no restart needed.
 
 ---
 
@@ -413,6 +629,7 @@ A 11×5 composite showing the toilet footprint in plan view.
 Connects to a cold-water supply pipe on either side (E or W).
 Acts as a drain terminal (pressure = 0 at the fixture).
 Use [T] to cycle the flush-demand type (e.g. Toilet 1.28 GPM).
+Drain Fixture Unit (DFU) value: 6 DFU.
 
 ## Faucet/Sink  ≈
 
@@ -420,6 +637,7 @@ A 11×5 composite showing a faucet supply point in plan view.
 Connects to a cold/hot supply pipe on either side (E or W).
 Acts as a drain terminal (pressure = 0 at the fixture).
 Use [T] to cycle the fixture demand type (e.g. Kitchen 2.2 GPM, Bath 1.5 GPM).
+Drain Fixture Unit (DFU) value: 1 DFU.
 
 ## Basin Sink  ⊔
 
@@ -434,6 +652,7 @@ of the composite animates with ≋/≈/~ water characters to indicate the basin
 is full and overflowing.
 
 Use [T] to cycle the fixture demand type.
+Drain Fixture Unit (DFU) value: 1 DFU.
 
 ## Water Heater  ▲
 
@@ -444,28 +663,33 @@ When the simulation is running, the interior cells animate with bubbling/heating
 characters (·, ∘, °) and glow orange to show the tank heating up.
 Hot supply continues to downstream fixtures (shower, sinks, etc.).
 
-## Water Softener
+## Water Softener  ◎
 
 A 17×5 composite (inline, not a terminal).
 Hard water enters on the W port; conditioned water exits on the E port.
-Behaves the same as the Water Heater in terms of simulation friction.
+Ion-exchange resin removes calcium and magnesium minerals that cause scale buildup
+in pipes and appliances.
+Equivalent friction: ~80 pipe-diameters.
 
 ## Whole House Filter  ⊞
 
-An inline composite, E/W ports.
-Carbon or mixed-media filter for whole-house water treatment.
+An inline composite, East/West ports.
+Carbon or mixed-media filter for whole-house water treatment.  Reduces chlorine,
+sediment, and common contaminants across all outlets simultaneously.
 Equivalent friction: ~50 pipe-diameters.
 
 ## Sediment Filter  ⊟
 
-An inline composite, E/W ports.
-Particle pre-filter; typically installed upstream of finer filters.
+An inline composite, East/West ports.
+Particle pre-filter; typically installed upstream of finer filters to extend their
+service life by catching sand, rust flakes, and other suspended solids.
 Equivalent friction: ~30 pipe-diameters.
 
-## UV Filter  ⊕
+## Ultraviolet (UV) Filter  ⊕
 
-An inline composite, E/W ports.
-Ultraviolet disinfection stage with minimal pressure drop.
+An inline composite, East/West ports.
+Ultraviolet disinfection stage.  Water passes through a chamber where UV light
+destroys bacteria, viruses, and other microorganisms — no chemicals required.
 Equivalent friction: ~10 pipe-diameters.
 
 ## Pressure Gauge  ⊙
@@ -473,14 +697,15 @@ Equivalent friction: ~10 pipe-diameters.
 A single-cell inline gauge with four-way ports (N/S/E/W).
 Reads local pressure at the point of installation.
 Zero friction loss — purely for monitoring.
+When the simulation is running the footer shows the exact psi reading.
 
 ## Flow Meter  ⊗
 
-A single-cell inline flow meter.  Available in horizontal (E/W ports) and
-vertical (N/S ports) orientations.
+A single-cell inline flow meter.  Available in horizontal (East/West ports) and
+vertical (North/South ports) orientations.
 
-Reads the volumetric flow rate (GPM) passing through it.  When simulation is
-running, the footer shows:
+Reads the volumetric flow rate (gallons per minute, GPM) passing through it.
+When simulation is running, the footer shows:
 
   ⊗ METER  2.34 GPM   65.2 PSI  [FLOWING]
 
@@ -500,21 +725,23 @@ A single-cell solid-fill character.  Has no plumbing ports and is completely
 invisible to the simulation.  Use it to sketch room outlines, walls, floors,
 or ceilings around your plumbing layout.
 
-Solid Blocks appear in the Bill of Materials with a count but no material or
-length data, since they carry no pipe information.
+Solid Blocks appear in the Bill of Materials (BOM) with a count but no material
+or length data, since they carry no pipe information.
 
 ---
 
 # Materials & Colors
 
-[1]  Copper           warm gold   — standard household supply lines
-[2]  PEX              red         — flexible plastic, common in modern builds
-[3]  GalvanizedIron   steel-blue  — older steel piping
-[4]  PE               green       — polyethylene, often used underground
-[5]  BlackPlastic     dark gray   — ABS / PVC drainage lines
-[6]  CastIron         purple-gray — heavy drain / sewer pipe
+[1]  Copper               warm gold   — standard household supply lines
+[2]  PEX                  red         — flexible plastic, common in modern builds
+[3]  Galvanized Iron       steel-blue  — older steel piping
+[4]  PE (Polyethylene)     green       — flexible plastic, often used underground
+[5]  Black Plastic (ABS/PVC)  dark gray — rigid plastic drainage lines
+[6]  Cast Iron             purple-gray — heavy drain / sewer pipe
 
-Material affects only the visual color — simulation treats all materials the same.
+Material affects the pipe color and the Hazen-Williams friction calculation —
+smoother materials (PEX, PE) flow more freely than rougher ones (Cast Iron,
+Galvanized Iron) at the same pipe diameter.
 
 ---
 
@@ -529,5 +756,15 @@ Material affects only the visual color — simulation treats all materials the s
   • Use [Ctrl+Z] freely — every edit is undoable, up to 50 steps.
   • Export to .txt with [X] to paste your diagram into documentation or share it as ASCII art.
   • Notes support multiple lines: separate them with `|` in the text prompt.
+  • Use [H] on supply pipes to color-code hot lines (red) from cold lines (blue) —
+    helpful when drawing a full system with both supplies.
+  • Install a Pressure Reducing Valve (PRV) when modeling a system fed from a
+    high-pressure municipal main — set the downstream setpoint to 60 psi.
+  • Add an Expansion Tank off a Tee near the water heater whenever a PRV or check
+    valve creates a closed system.
+  • In Drain-Waste-Vent (DWV) mode, place a P-trap within a few cells of every
+    fixture to satisfy the code check — the footer will confirm with a ✓.
+  • Use the Cost Estimator [$] to get a ballpark material total before going to the
+    supply house — update prices once and they carry over to every diagram.
   • Edit this file (`help.txt`) in any text editor to add your own notes.
-    Changes take effect the next time you press [H] — no restart needed.
+    Changes take effect the next time you press [?] — no restart needed.

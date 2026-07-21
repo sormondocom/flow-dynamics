@@ -11,7 +11,7 @@ use super::format_pipe_length;
 /// Build a map of (row, col) → (char, Style) for all pipe-run dimension lines.
 pub(super) fn compute_annotations(app: &App) -> HashMap<(usize, usize), (char, Style)> {
     let mut map: HashMap<(usize, usize), (char, Style)> = HashMap::new();
-    let grid = &app.grid;
+    let grid = &app.canvas.grid;
     let ann  = Style::default().fg(Color::Rgb(180, 180, 60));
     let bold = Style::default().fg(Color::Rgb(220, 220, 80)).add_modifier(Modifier::BOLD);
 
@@ -72,6 +72,7 @@ pub(super) fn compute_annotations(app: &App) -> HashMap<(usize, usize), (char, S
     map
 }
 
+#[allow(clippy::too_many_arguments)]
 fn place_h_annotation(
     map: &mut HashMap<(usize, usize), (char, Style)>,
     grid: &Grid,
@@ -95,6 +96,7 @@ fn place_h_annotation(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn place_v_annotation(
     map: &mut HashMap<(usize, usize), (char, Style)>,
     grid: &Grid,
