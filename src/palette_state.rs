@@ -2,6 +2,12 @@ use std::collections::HashMap;
 
 use crate::components::{ComponentKind, PipeDiameter, PipeMaterial};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PaletteDisplayRow {
+    GroupHeader { group_idx: usize },
+    Component   { flat_idx: usize },
+}
+
 pub struct PaletteState {
     pub palette: Vec<ComponentKind>,
     pub palette_idx: usize,
@@ -14,6 +20,11 @@ pub struct PaletteState {
     pub palette_search_active: bool,
     pub build_color_cursor: usize,
     pub build_custom_rgb: Option<[u8; 3]>,
+    pub display_rows: Vec<PaletteDisplayRow>,
+    pub display_idx: usize,
+    pub group_picker_active: bool,
+    pub group_picker_idx: usize,
+    pub group_picker_for_flat: Option<usize>,
 }
 
 impl Default for PaletteState {
@@ -33,6 +44,11 @@ impl Default for PaletteState {
             palette_search_active: false,
             build_color_cursor: 11,
             build_custom_rgb: None,
+            display_rows: Vec::new(),
+            display_idx: 2,
+            group_picker_active: false,
+            group_picker_idx: 0,
+            group_picker_for_flat: None,
         }
     }
 }

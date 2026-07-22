@@ -9,7 +9,7 @@ use crate::dialog_state::DialogState;
 use crate::file_dialog::{FileDialogMode, FileDialogPurpose, FileDialogState};
 use crate::fluid::FluidType;
 use crate::glyphs::{
-    CustomCompDef, GlyphDef, GlyphEditorFocus, GlyphEditorState, GlyphRegistry,
+    CustomCompDef, EditorDisplayRow, GlyphDef, GlyphEditorFocus, GlyphEditorState, GlyphRegistry,
     ALL_DIAMETERS, ALL_MATERIALS, COLOR_PALETTE, COLOR_PALETTE_COLS,
 };
 use crate::grid::Grid;
@@ -253,6 +253,10 @@ pub enum TextEditTarget {
     LinkPath,
     /// Price value being edited in the cost estimator.
     CostPrice,
+    /// Name for a new component group.
+    NewGroupName,
+    /// Name of the group to assign the selected component to (typed after picker).
+    GroupAssign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -389,12 +393,424 @@ impl App {
             self.pal.palette_idx = self.pal.palette.len().saturating_sub(1);
         }
         let _ = prev_len;
+        self.rebuild_display_rows();
+        self.rebuild_editor_display_rows();
     }
 
     /// Returns the custom-component registry index for the currently selected palette
     /// slot, or None if the selected slot is not a custom component.
     pub fn selected_custom_idx(&self) -> Option<usize> {
         self.pal.palette_custom_indices.get(self.pal.palette_idx).copied().flatten()
+    }
+
+    // ── Group / display-row infrastructure ───────────────────────────────────
+
+    /// Returns the stable string key used to look up a palette flat-list item's group assignment.
+    pub fn component_key_for(&self, flat_idx: usize) -> String {
+        if flat_idx >= self.pal.palette.len() { return "unknown".into(); }
+        let kind = self.pal.palette[flat_idx];
+        if kind == crate::components::ComponentKind::Custom {
+            if let Some(ci) = self.pal.palette_custom_indices.get(flat_idx).copied().flatten() {
+                let customs = self.glyph_registry.custom_components();
+                if ci < customs.len() {
+                    return customs[ci].id.clone();
+                }
+            }
+            return format!("custom_{flat_idx}");
+        }
+        crate::glyphs::kind_key(kind).to_string()
+    }
+
+    /// Returns the group name for a palette flat index (defaults to "General").
+    pub fn group_for_flat_idx(&self, flat_idx: usize) -> &str {
+        let key = self.component_key_for(flat_idx);
+        self.config.component_groups.get(&key).map(|s| s.as_str()).unwrap_or("General")
+    }
+
+    /// Builds the palette display list (group headers + component rows) from config.
+    pub fn rebuild_display_rows(&mut self) {
+        // Ensure "General" always exists as the first group.
+        if self.config.groups.is_empty() {
+            self.config.groups.push(crate::config::GroupConfig { name: "General".into(), collapsed: false });
+        }
+        let mut rows = Vec::new();
+        for (gi, group) in self.config.groups.iter().enumerate() {
+            rows.push(crate::palette_state::PaletteDisplayRow::GroupHeader { group_idx: gi });
+            if !group.collapsed {
+                for flat_idx in 0..self.pal.palette.len() {
+                    let in_this_group = if group.name == "General" {
+                        let assigned = self.config.component_groups.get(&self.component_key_for(flat_idx));
+                        match assigned {
+                            None => true,
+                            Some(name) => !self.config.groups.iter().any(|g| &g.name == name) || name == "General",
+                        }
+                    } else {
+                        let comp_group = self.group_for_flat_idx(flat_idx);
+                        comp_group == group.name
+                    };
+                    if in_this_group {
+                        rows.push(crate::palette_state::PaletteDisplayRow::Component { flat_idx });
+                    }
+                }
+            }
+        }
+        self.pal.display_rows = rows;
+        // Keep display_idx in bounds.
+        if self.pal.display_idx >= self.pal.display_rows.len() {
+            self.pal.display_idx = self.pal.display_rows.len().saturating_sub(1);
+        }
+        // If cursor is on a component row, sync palette_idx.
+        self.sync_palette_idx_from_display();
+    }
+
+    fn sync_palette_idx_from_display(&mut self) {
+        if let Some(crate::palette_state::PaletteDisplayRow::Component { flat_idx }) =
+            self.pal.display_rows.get(self.pal.display_idx)
+        {
+            self.pal.palette_idx = *flat_idx;
+        }
+    }
+
+    /// Builds the glyph editor display list (group headers + component rows).
+    pub fn rebuild_editor_display_rows(&mut self) {
+        if self.config.groups.is_empty() {
+            self.config.groups.push(crate::config::GroupConfig { name: "General".into(), collapsed: false });
+        }
+        let static_len = crate::components::ComponentKind::all_palette().len();
+        let customs = self.glyph_registry.custom_components();
+        let total = static_len + customs.len();
+        let customs_len = customs.len();
+        let mut rows = Vec::new();
+        for (gi, group) in self.config.groups.iter().enumerate() {
+            rows.push(EditorDisplayRow::GroupHeader { group_idx: gi });
+            if !group.collapsed {
+                for kind_idx in 0..total {
+                    let key = if kind_idx < static_len {
+                        crate::glyphs::kind_key(crate::components::ComponentKind::all_palette()[kind_idx]).to_string()
+                    } else {
+                        let ci = kind_idx - static_len;
+                        if ci < customs_len {
+                            // Re-borrow customs inside the loop
+                            self.glyph_registry.custom_components()[ci].id.clone()
+                        } else {
+                            continue;
+                        }
+                    };
+                    let comp_group = self.config.component_groups.get(&key).map(|s| s.as_str()).unwrap_or("General");
+                    let in_this_group = if group.name == "General" {
+                        let assigned = self.config.component_groups.get(&key);
+                        match assigned {
+                            None => true,
+                            Some(name) => !self.config.groups.iter().any(|g| &g.name == name) || name == "General",
+                        }
+                    } else {
+                        comp_group == group.name
+                    };
+                    if in_this_group {
+                        rows.push(EditorDisplayRow::Component { kind_idx });
+                    }
+                }
+            }
+        }
+        self.editor.display_rows = rows;
+        if self.editor.display_idx >= self.editor.display_rows.len() {
+            self.editor.display_idx = self.editor.display_rows.len().saturating_sub(1);
+        }
+        self.sync_editor_kind_idx_from_display();
+    }
+
+    fn sync_editor_kind_idx_from_display(&mut self) {
+        if let Some(EditorDisplayRow::Component { kind_idx }) =
+            self.editor.display_rows.get(self.editor.display_idx)
+        {
+            self.editor.kind_idx = *kind_idx;
+        }
+    }
+
+    // ── Palette navigation using display rows ─────────────────────────────────
+
+    pub fn palette_display_up(&mut self) {
+        if self.pal.display_idx > 0 {
+            self.pal.display_idx -= 1;
+            self.sync_palette_idx_from_display();
+        }
+    }
+
+    pub fn palette_display_down(&mut self) {
+        if self.pal.display_idx + 1 < self.pal.display_rows.len() {
+            self.pal.display_idx += 1;
+            self.sync_palette_idx_from_display();
+        }
+    }
+
+    pub fn palette_display_home(&mut self) {
+        self.pal.display_idx = 0;
+        self.sync_palette_idx_from_display();
+    }
+
+    pub fn palette_display_end(&mut self) {
+        if !self.pal.display_rows.is_empty() {
+            self.pal.display_idx = self.pal.display_rows.len() - 1;
+            self.sync_palette_idx_from_display();
+        }
+    }
+
+    pub fn palette_display_page_up(&mut self) {
+        self.pal.display_idx = self.pal.display_idx.saturating_sub(10);
+        self.sync_palette_idx_from_display();
+    }
+
+    pub fn palette_display_page_down(&mut self) {
+        if !self.pal.display_rows.is_empty() {
+            self.pal.display_idx = (self.pal.display_idx + 10).min(self.pal.display_rows.len() - 1);
+            self.sync_palette_idx_from_display();
+        }
+    }
+
+    // ── Group management (palette) ────────────────────────────────────────────
+
+    /// True if the display cursor is currently on a group header.
+    pub fn palette_cursor_on_header(&self) -> bool {
+        matches!(self.pal.display_rows.get(self.pal.display_idx),
+            Some(crate::palette_state::PaletteDisplayRow::GroupHeader { .. }))
+    }
+
+    /// Returns the group index the cursor is on (header or the header above a component).
+    #[allow(dead_code)]
+    pub fn palette_cursor_group_idx(&self) -> Option<usize> {
+        match self.pal.display_rows.get(self.pal.display_idx) {
+            Some(crate::palette_state::PaletteDisplayRow::GroupHeader { group_idx }) => Some(*group_idx),
+            Some(crate::palette_state::PaletteDisplayRow::Component { .. }) => {
+                for i in (0..self.pal.display_idx).rev() {
+                    if let Some(crate::palette_state::PaletteDisplayRow::GroupHeader { group_idx }) =
+                        self.pal.display_rows.get(i)
+                    {
+                        return Some(*group_idx);
+                    }
+                }
+                None
+            }
+            None => None,
+        }
+    }
+
+    /// Toggle collapse/expand of the group at the current cursor.
+    pub fn palette_toggle_group(&mut self) {
+        let gi = match self.pal.display_rows.get(self.pal.display_idx) {
+            Some(crate::palette_state::PaletteDisplayRow::GroupHeader { group_idx }) => *group_idx,
+            _ => return,
+        };
+        if gi < self.config.groups.len() {
+            self.config.groups[gi].collapsed = !self.config.groups[gi].collapsed;
+            self.config.save();
+            self.rebuild_display_rows();
+        }
+    }
+
+    /// Open the group picker for the selected component (palette context).
+    pub fn palette_open_group_picker(&mut self) {
+        if let Some(crate::palette_state::PaletteDisplayRow::Component { flat_idx }) =
+            self.pal.display_rows.get(self.pal.display_idx)
+        {
+            self.pal.group_picker_for_flat = Some(*flat_idx);
+            self.pal.group_picker_idx = 0;
+            self.pal.group_picker_active = true;
+        }
+    }
+
+    /// Confirm group assignment from the picker.
+    pub fn palette_confirm_group_pick(&mut self) {
+        let Some(flat_idx) = self.pal.group_picker_for_flat else { return; };
+        let num_groups = self.config.groups.len();
+        let pick = self.pal.group_picker_idx;
+        if pick >= num_groups {
+            // "New Group" option selected — open text input for name.
+            self.pal.group_picker_active = false;
+            self.pal.group_picker_for_flat = Some(flat_idx);
+            self.text_input.input_buffer.clear();
+            self.text_input.input_mode = InputMode::EditingText(TextEditTarget::GroupAssign);
+        } else {
+            let group_name = self.config.groups[pick].name.clone();
+            self.assign_component_to_group(flat_idx, group_name);
+            self.pal.group_picker_active = false;
+            self.pal.group_picker_for_flat = None;
+        }
+    }
+
+    /// Cancel group picker.
+    pub fn palette_cancel_group_picker(&mut self) {
+        self.pal.group_picker_active = false;
+        self.pal.group_picker_for_flat = None;
+    }
+
+    /// Move a component (by palette flat index) to a named group.
+    /// Creates the group if it doesn't exist.
+    pub fn assign_component_to_group(&mut self, flat_idx: usize, group_name: String) {
+        if !self.config.groups.iter().any(|g| g.name == group_name) {
+            self.config.groups.push(crate::config::GroupConfig { name: group_name.clone(), collapsed: false });
+        }
+        let key = self.component_key_for(flat_idx);
+        if group_name == "General" {
+            self.config.component_groups.remove(&key);
+        } else {
+            self.config.component_groups.insert(key, group_name);
+        }
+        self.config.save();
+        self.rebuild_display_rows();
+    }
+
+    /// Assign editor component (by kind_idx) to a named group.
+    pub fn assign_editor_component_to_group(&mut self, kind_idx: usize, group_name: String) {
+        let static_len = crate::components::ComponentKind::all_palette().len();
+        let key = if kind_idx < static_len {
+            crate::glyphs::kind_key(crate::components::ComponentKind::all_palette()[kind_idx]).to_string()
+        } else {
+            let ci = kind_idx - static_len;
+            let customs = self.glyph_registry.custom_components();
+            if ci < customs.len() { customs[ci].id.clone() } else { return; }
+        };
+        if !self.config.groups.iter().any(|g| g.name == group_name) {
+            self.config.groups.push(crate::config::GroupConfig { name: group_name.clone(), collapsed: false });
+        }
+        if group_name == "General" {
+            self.config.component_groups.remove(&key);
+        } else {
+            self.config.component_groups.insert(key, group_name);
+        }
+        self.config.save();
+        self.rebuild_editor_display_rows();
+    }
+
+    /// Begin creating a new group (opens text input).
+    pub fn begin_new_group(&mut self) {
+        self.text_input.input_buffer.clear();
+        self.text_input.input_mode = InputMode::EditingText(TextEditTarget::NewGroupName);
+    }
+
+    /// Delete the group the cursor is on (General cannot be deleted; members move to General).
+    pub fn palette_delete_group(&mut self) {
+        let gi = match self.pal.display_rows.get(self.pal.display_idx) {
+            Some(crate::palette_state::PaletteDisplayRow::GroupHeader { group_idx }) => *group_idx,
+            _ => return,
+        };
+        if gi == 0 || gi >= self.config.groups.len() { return; }
+        let name = self.config.groups[gi].name.clone();
+        self.config.component_groups.retain(|_, v| v != &name);
+        self.config.groups.remove(gi);
+        self.config.save();
+        self.rebuild_display_rows();
+    }
+
+    /// Delete the group the editor cursor is on.
+    pub fn editor_delete_group(&mut self) {
+        let gi = match self.editor.display_rows.get(self.editor.display_idx) {
+            Some(EditorDisplayRow::GroupHeader { group_idx }) => *group_idx,
+            _ => return,
+        };
+        if gi == 0 || gi >= self.config.groups.len() { return; }
+        let name = self.config.groups[gi].name.clone();
+        self.config.component_groups.retain(|_, v| v != &name);
+        self.config.groups.remove(gi);
+        self.config.save();
+        self.rebuild_editor_display_rows();
+    }
+
+    /// Toggle collapse of the group the editor cursor is on.
+    pub fn editor_toggle_group(&mut self) {
+        let gi = match self.editor.display_rows.get(self.editor.display_idx) {
+            Some(EditorDisplayRow::GroupHeader { group_idx }) => *group_idx,
+            _ => return,
+        };
+        if gi < self.config.groups.len() {
+            self.config.groups[gi].collapsed = !self.config.groups[gi].collapsed;
+            self.config.save();
+            self.rebuild_editor_display_rows();
+        }
+    }
+
+    /// Open group picker for glyph editor component.
+    pub fn editor_open_group_picker(&mut self) {
+        if let Some(EditorDisplayRow::Component { kind_idx }) =
+            self.editor.display_rows.get(self.editor.display_idx)
+        {
+            self.editor.group_picker_for_kind = Some(*kind_idx);
+            self.editor.group_picker_idx = 0;
+            self.editor.group_picker_active = true;
+        }
+    }
+
+    pub fn editor_confirm_group_pick(&mut self) {
+        let Some(kind_idx) = self.editor.group_picker_for_kind else { return; };
+        let num_groups = self.config.groups.len();
+        let pick = self.editor.group_picker_idx;
+        if pick >= num_groups {
+            self.editor.group_picker_active = false;
+            self.text_input.input_buffer.clear();
+            self.text_input.input_mode = InputMode::EditingText(TextEditTarget::GroupAssign);
+            self.editor.group_picker_for_kind = Some(kind_idx);
+        } else {
+            let group_name = self.config.groups[pick].name.clone();
+            self.assign_editor_component_to_group(kind_idx, group_name);
+            self.editor.group_picker_active = false;
+            self.editor.group_picker_for_kind = None;
+        }
+    }
+
+    pub fn editor_cancel_group_picker(&mut self) {
+        self.editor.group_picker_active = false;
+        self.editor.group_picker_for_kind = None;
+    }
+
+    // ── Glyph editor display navigation ──────────────────────────────────────
+
+    pub fn editor_display_nav(&mut self, delta: isize) {
+        if self.editor.focus != GlyphEditorFocus::ComponentList { return; }
+        let new_idx = self.editor.display_idx as isize + delta;
+        if new_idx < 0 { return; }
+        let new_idx = new_idx as usize;
+        if new_idx < self.editor.display_rows.len() {
+            let prev_kind = self.editor.kind_idx;
+            self.editor.display_idx = new_idx;
+            self.sync_editor_kind_idx_from_display();
+            if !self.editor_selected_is_composite()
+                && self.editor.focus == GlyphEditorFocus::CompositeGrid
+            {
+                self.editor.focus = GlyphEditorFocus::CharGrid;
+            }
+            if self.editor.kind_idx != prev_kind {
+                self.editor.composite_cursor = (1, 1);
+                self.editor.composite_viewport = (0, 0);
+            }
+        }
+    }
+
+    pub fn editor_display_home(&mut self) {
+        if self.editor.focus != GlyphEditorFocus::ComponentList { return; }
+        self.editor.display_idx = 0;
+        self.sync_editor_kind_idx_from_display();
+    }
+
+    pub fn editor_display_end(&mut self) {
+        if self.editor.focus != GlyphEditorFocus::ComponentList { return; }
+        if !self.editor.display_rows.is_empty() {
+            self.editor.display_idx = self.editor.display_rows.len() - 1;
+            self.sync_editor_kind_idx_from_display();
+        }
+    }
+
+    pub fn editor_display_page_up(&mut self) {
+        if self.editor.focus != GlyphEditorFocus::ComponentList { return; }
+        self.editor.display_idx = self.editor.display_idx.saturating_sub(10);
+        self.sync_editor_kind_idx_from_display();
+    }
+
+    pub fn editor_display_page_down(&mut self) {
+        if self.editor.focus != GlyphEditorFocus::ComponentList { return; }
+        if !self.editor.display_rows.is_empty() {
+            self.editor.display_idx =
+                (self.editor.display_idx + 10).min(self.editor.display_rows.len() - 1);
+            self.sync_editor_kind_idx_from_display();
+        }
     }
 
     fn try_load_assemblies() -> AssemblyLibrary {
@@ -1331,20 +1747,24 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub fn palette_home(&mut self) {
         self.pal.palette_idx = 0;
     }
 
+    #[allow(dead_code)]
     pub fn palette_end(&mut self) {
         if !self.pal.palette.is_empty() {
             self.pal.palette_idx = self.pal.palette.len() - 1;
         }
     }
 
+    #[allow(dead_code)]
     pub fn palette_page_up(&mut self) {
         self.pal.palette_idx = self.pal.palette_idx.saturating_sub(10);
     }
 
+    #[allow(dead_code)]
     pub fn palette_page_down(&mut self) {
         if !self.pal.palette.is_empty() {
             self.pal.palette_idx = (self.pal.palette_idx + 10).min(self.pal.palette.len() - 1);
@@ -1359,6 +1779,7 @@ impl App {
             "  [Tab] switch panel  [Enter] apply  [M] mat scope  [D] diam scope  \
              [N] new  [R] rename  [C] copy  [W] composite  [S] save  [L] load  [G/Q] exit"
                 .into();
+        self.rebuild_editor_display_rows();
     }
 
     pub fn exit_glyph_editor(&mut self) {
@@ -1454,22 +1875,8 @@ impl App {
     pub fn editor_nav(&mut self, dr: isize, dc: isize) {
         match self.editor.focus {
             GlyphEditorFocus::ComponentList => {
-                let prev_idx = self.editor.kind_idx;
-                let total = ComponentKind::all_palette().len()
-                    + self.glyph_registry.custom_components().len();
-                self.editor.nav_kind(dr, total);
-                // If navigating away from a composite, drop back to CharGrid focus.
-                if !self.editor_selected_is_composite()
-                    && self.editor.focus == GlyphEditorFocus::CompositeGrid
-                {
-                    self.editor.focus = GlyphEditorFocus::CharGrid;
-                }
-                // Reset composite cursor and viewport only when the selected component changes,
-                // so that returning to CompositeGrid after checking the list keeps the cursor in place.
-                if self.editor.kind_idx != prev_idx {
-                    self.editor.composite_cursor = (1, 1);
-                    self.editor.composite_viewport = (0, 0);
-                }
+                // Use display-row navigation (handles group headers).
+                self.editor_display_nav(dr);
             }
             GlyphEditorFocus::CompositeGrid => {
                 let static_len = ComponentKind::all_palette().len();
@@ -1531,17 +1938,13 @@ impl App {
 
     pub fn editor_nav_home(&mut self) {
         if self.editor.focus == GlyphEditorFocus::ComponentList {
-            self.editor.kind_idx = 0;
+            self.editor_display_home();
         }
     }
 
     pub fn editor_nav_end(&mut self) {
         if self.editor.focus == GlyphEditorFocus::ComponentList {
-            let total = ComponentKind::all_palette().len()
-                + self.glyph_registry.custom_components().len();
-            if total > 0 {
-                self.editor.kind_idx = total - 1;
-            }
+            self.editor_display_end();
         }
     }
 
@@ -2253,6 +2656,27 @@ impl App {
                     let new_ci = self.glyph_registry.custom_components().len() - 1;
                     self.editor.kind_idx = static_len + new_ci;
                     self.editor.status = format!("Copied to '{buf}'. Edit ports/cells as needed.");
+                }
+            }
+            InputMode::EditingText(TextEditTarget::NewGroupName) => {
+                if !buf.is_empty() {
+                    if !self.config.groups.iter().any(|g| g.name == buf) {
+                        self.config.groups.push(crate::config::GroupConfig { name: buf.clone(), collapsed: false });
+                        self.config.save();
+                    }
+                    self.rebuild_display_rows();
+                    self.rebuild_editor_display_rows();
+                    self.editor.status = format!("Created group '{buf}'.");
+                }
+            }
+            InputMode::EditingText(TextEditTarget::GroupAssign) => {
+                if !buf.is_empty() {
+                    if let Some(flat_idx) = self.pal.group_picker_for_flat.take() {
+                        self.assign_component_to_group(flat_idx, buf.clone());
+                    } else if let Some(kind_idx) = self.editor.group_picker_for_kind.take() {
+                        self.assign_editor_component_to_group(kind_idx, buf.clone());
+                    }
+                    self.editor.status = format!("Assigned to group '{buf}'.");
                 }
             }
             _ => {}

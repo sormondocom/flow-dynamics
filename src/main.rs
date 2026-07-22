@@ -795,6 +795,23 @@ fn handle_palette_key(app: &mut App, code: KeyCode, shift: bool) {
         return;
     }
 
+    // ── Group picker intercept ────────────────────────────────────────────────
+    if app.pal.group_picker_active {
+        match code {
+            KeyCode::Up => {
+                if app.pal.group_picker_idx > 0 { app.pal.group_picker_idx -= 1; }
+            }
+            KeyCode::Down => {
+                let max = app.config.groups.len(); // +1 for "[+ New Group]" at index == len
+                if app.pal.group_picker_idx < max { app.pal.group_picker_idx += 1; }
+            }
+            KeyCode::Enter => { app.palette_confirm_group_pick(); }
+            KeyCode::Esc   => { app.palette_cancel_group_picker(); }
+            _ => {}
+        }
+        return;
+    }
+
     // [/] activates search.
     if code == KeyCode::Char('/') {
         app.pal.palette_search_active = true;
@@ -803,14 +820,39 @@ fn handle_palette_key(app: &mut App, code: KeyCode, shift: bool) {
     }
 
     match code {
-        // Enter returns focus to the canvas — pick a component, press Enter, keep building.
-        KeyCode::Enter => { app.focus = Focus::Canvas; }
-        KeyCode::Up       => app.palette_up(),
-        KeyCode::Down     => app.palette_down(),
-        KeyCode::Home     => app.palette_home(),
-        KeyCode::End      => app.palette_end(),
-        KeyCode::PageUp   => app.palette_page_up(),
-        KeyCode::PageDown => app.palette_page_down(),
+        // Enter on group header = toggle collapse; on component = return focus to canvas.
+        KeyCode::Enter => {
+            if app.palette_cursor_on_header() {
+                app.palette_toggle_group();
+            } else {
+                app.focus = Focus::Canvas;
+            }
+        }
+        // [Space]: toggle group collapse (on header) or open group picker (on component)
+        KeyCode::Char(' ') => {
+            if app.palette_cursor_on_header() {
+                app.palette_toggle_group();
+            } else {
+                app.palette_open_group_picker();
+            }
+        }
+        KeyCode::Delete => {
+            if app.palette_cursor_on_header() {
+                app.palette_delete_group();
+            }
+        }
+        // [n] on a group header creates a new group
+        KeyCode::Char('n') | KeyCode::Char('N') => {
+            if app.palette_cursor_on_header() {
+                app.begin_new_group();
+            }
+        }
+        KeyCode::Up       => app.palette_display_up(),
+        KeyCode::Down     => app.palette_display_down(),
+        KeyCode::Home     => app.palette_display_home(),
+        KeyCode::End      => app.palette_display_end(),
+        KeyCode::PageUp   => app.palette_display_page_up(),
+        KeyCode::PageDown => app.palette_display_page_down(),
         KeyCode::Char('d') | KeyCode::Char('D') => app.cycle_diameter(),
         KeyCode::Char('m') | KeyCode::Char('M') => app.cycle_material_at_cursor(),
         KeyCode::Char('l') | KeyCode::Char('L') => {
@@ -906,7 +948,9 @@ fn handle_settings_key(app: &mut App, code: KeyCode) {
     }
 }
 
-fn handle_glyph_editor_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
+fn handle_glyph_editor_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    use crate::glyphs::EditorDisplayRow;
+
     // Intercept all keys while a delete confirmation is pending.
     if app.dialog.editor_pending_delete.is_some() {
         match code {
@@ -916,11 +960,41 @@ fn handle_glyph_editor_key(app: &mut App, code: KeyCode, _modifiers: KeyModifier
         return;
     }
 
+    // Group picker intercept (editor).
+    if app.editor.group_picker_active {
+        match code {
+            KeyCode::Up => {
+                if app.editor.group_picker_idx > 0 { app.editor.group_picker_idx -= 1; }
+            }
+            KeyCode::Down => {
+                let max = app.config.groups.len();
+                if app.editor.group_picker_idx < max { app.editor.group_picker_idx += 1; }
+            }
+            KeyCode::Enter => { app.editor_confirm_group_pick(); }
+            KeyCode::Esc   => { app.editor_cancel_group_picker(); }
+            _ => {}
+        }
+        return;
+    }
+
+    let _shift = modifiers.contains(KeyModifiers::SHIFT);
+
     match code {
-        // Exit glyph editor
-        KeyCode::Char('q') | KeyCode::Char('Q')
-        | KeyCode::Char('g') | KeyCode::Char('G') => {
+        // Exit glyph editor.
+        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('g') | KeyCode::Char('G') => {
             app.exit_glyph_editor();
+        }
+        // [Space] in ComponentList: toggle group (on header) or open group picker (on component)
+        KeyCode::Char(' ') if app.editor.focus == GlyphEditorFocus::ComponentList => {
+            let on_header = matches!(
+                app.editor.display_rows.get(app.editor.display_idx),
+                Some(EditorDisplayRow::GroupHeader { .. })
+            );
+            if on_header {
+                app.editor_toggle_group();
+            } else {
+                app.editor_open_group_picker();
+            }
         }
         // Cycle focus between panels
         KeyCode::Tab => app.editor_cycle_focus(),
@@ -929,8 +1003,10 @@ fn handle_glyph_editor_key(app: &mut App, code: KeyCode, _modifiers: KeyModifier
         KeyCode::Down  => app.editor_nav(1, 0),
         KeyCode::Left  => app.editor_nav(0, -1),
         KeyCode::Right => app.editor_nav(0, 1),
-        KeyCode::Home  => app.editor_nav_home(),
-        KeyCode::End   => app.editor_nav_end(),
+        KeyCode::Home     => app.editor_nav_home(),
+        KeyCode::End      => app.editor_nav_end(),
+        KeyCode::PageUp   => app.editor_display_page_up(),
+        KeyCode::PageDown => app.editor_display_page_down(),
         // Apply current char + color as a glyph override for the selected component
         KeyCode::Enter => app.editor_apply_glyph(),
         // Scope selectors (which materials / diameters this override targets)
@@ -956,8 +1032,25 @@ fn handle_glyph_editor_key(app: &mut App, code: KeyCode, _modifiers: KeyModifier
         KeyCode::Char('c') | KeyCode::Char('C') => app.editor_begin_copy_comp(),
         // Set composite width for the selected custom component
         KeyCode::Char('w') | KeyCode::Char('W') => app.editor_begin_set_composite_width(),
-        // Del/Bsp: delete custom component when list is focused, clear composite cell otherwise
-        KeyCode::Delete | KeyCode::Backspace => {
+        // Del: in ComponentList — delete group if on header, else delete custom comp.
+        //      In CompositeGrid — clear composite cell.
+        // Backspace: same as Del but never deletes a group.
+        KeyCode::Delete => {
+            if app.editor.focus == GlyphEditorFocus::ComponentList {
+                let on_header = matches!(
+                    app.editor.display_rows.get(app.editor.display_idx),
+                    Some(EditorDisplayRow::GroupHeader { .. })
+                );
+                if on_header {
+                    app.editor_delete_group();
+                } else {
+                    app.editor_delete_custom_comp();
+                }
+            } else {
+                app.editor_clear_composite_cell();
+            }
+        }
+        KeyCode::Backspace => {
             if app.editor.focus == GlyphEditorFocus::ComponentList {
                 app.editor_delete_custom_comp();
             } else {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,17 @@ use crate::cost_config::CostConfig;
 const CONFIG_FILE: &str = "flow-dynamics.config.json";
 
 fn default_grid_scale() -> u8 { 12 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupConfig {
+    pub name: String,
+    #[serde(default)]
+    pub collapsed: bool,
+}
+
+fn default_groups() -> Vec<GroupConfig> {
+    vec![GroupConfig { name: "General".to_string(), collapsed: false }]
+}
 
 /// Persistent application configuration stored in `flow-dynamics.config.json`
 /// alongside the layout / glyph files in the working directory.
@@ -26,6 +38,14 @@ pub struct AppConfig {
     /// Per-unit prices for the cost estimator.
     #[serde(default)]
     pub costs: CostConfig,
+
+    /// Named groups for organizing palette components.
+    #[serde(default = "default_groups")]
+    pub groups: Vec<GroupConfig>,
+
+    /// Maps a component key (kind_key or custom id) to a group name.
+    #[serde(default)]
+    pub component_groups: HashMap<String, String>,
 }
 
 impl AppConfig {

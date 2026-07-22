@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppMode, InputMode, TextEditTarget};
+use crate::app::{App, AppMode, Focus, InputMode, TextEditTarget};
 use crate::components::{ComponentKind, LineTemp, ValveState};
 use crate::simulation::FlowState;
 
@@ -316,11 +316,13 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         ]));
     } else if let InputMode::EditingText(target) = app.text_input.input_mode {
         let prompt = match target {
-            TextEditTarget::AssemblyName  => "Assembly name: ",
-            TextEditTarget::AddGlyphFile  => "Glyph file path: ",
-            TextEditTarget::CustomRgb     => "Custom RGB (R,G,B): ",
+            TextEditTarget::AssemblyName   => "Assembly name: ",
+            TextEditTarget::AddGlyphFile   => "Glyph file path: ",
+            TextEditTarget::CustomRgb      => "Custom RGB (R,G,B): ",
             TextEditTarget::BuildCustomRgb => "Custom color R,G,B: ",
-            _                             => "",
+            TextEditTarget::NewGroupName   => "New group name: ",
+            TextEditTarget::GroupAssign    => "New group name: ",
+            _                              => "",
         };
         if !prompt.is_empty() {
             lines.push(Line::from(vec![
@@ -357,20 +359,43 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     match app.mode {
         AppMode::Splash | AppMode::Build | AppMode::GlyphEditor | AppMode::BomView
         | AppMode::Selecting | AppMode::AssemblyBrowser | AppMode::Stamping => {
-            lines.push(Line::from(vec![
-                key("[Enter]"), Span::raw("Place "),
-                key("[Del]"), Span::raw("Delete "),
-                key("[V]"), Span::raw("Valve "),
-                key("[1-6]"), Span::raw("Material "),
-                key("[D]"), Span::raw("Diameter "),
-                key("[F]"), Span::raw("Fluid "),
-                key("[+/-]"), Span::raw("Len±1in "),
-                key("[L]"), Span::raw("Len=? "),
-                key("[T]"), Span::raw("Drain "),
-                key("[I]"), Span::raw("Pressure "),
-                key("[H]"), Span::raw("Hot/Cold "),
-                key("[G]"), Span::raw("Glyphs"),
-            ]));
+            if app.focus == Focus::Palette && !app.pal.palette_search_active {
+                // Palette-panel-focused: show group + component hints on row 1
+                let on_header = app.palette_cursor_on_header();
+                if on_header {
+                    lines.push(Line::from(vec![
+                        key("[↑↓]"), Span::raw("Navigate "),
+                        key("[Spc]/[Enter]"), Span::raw("Expand/Collapse "),
+                        key("[n]"), Span::raw("New Group "),
+                        key("[Del]"), Span::raw("Delete Group "),
+                        key("[Tab]"), Span::raw("To Canvas"),
+                    ]));
+                } else {
+                    lines.push(Line::from(vec![
+                        key("[↑↓]"), Span::raw("Navigate "),
+                        key("[Spc]"), Span::raw("Move to Group "),
+                        key("[m]"), Span::raw("Material "),
+                        key("[D]"), Span::raw("Diameter "),
+                        key("[L]"), Span::raw("Detail "),
+                        key("[Enter]"), Span::raw("To Canvas"),
+                    ]));
+                }
+            } else {
+                lines.push(Line::from(vec![
+                    key("[Enter]"), Span::raw("Place "),
+                    key("[Del]"), Span::raw("Delete "),
+                    key("[V]"), Span::raw("Valve "),
+                    key("[1-6]"), Span::raw("Material "),
+                    key("[D]"), Span::raw("Diameter "),
+                    key("[F]"), Span::raw("Fluid "),
+                    key("[+/-]"), Span::raw("Len±1in "),
+                    key("[L]"), Span::raw("Len=? "),
+                    key("[T]"), Span::raw("Drain "),
+                    key("[I]"), Span::raw("Pressure "),
+                    key("[H]"), Span::raw("Hot/Cold "),
+                    key("[G]"), Span::raw("Glyphs"),
+                ]));
+            }
             lines.push(Line::from(vec![
                 key("[Tab]"), Span::raw("Focus "),
                 key("[Home/End]"), Span::raw("Jump "),

@@ -9,7 +9,7 @@ use ratatui::{
 use crate::app::{App, InputMode, TextEditTarget};
 use crate::components::ComponentKind;
 use crate::glyphs::{
-    GlyphEditorFocus, PortKind, CHAR_PALETTE, CHAR_PALETTE_COLS,
+    EditorDisplayRow, GlyphEditorFocus, PortKind, CHAR_PALETTE, CHAR_PALETTE_COLS,
     CHAR_PALETTE_SYMBOLICS_LEN, COLOR_PALETTE, COLOR_PALETTE_COLS,
 };
 
@@ -81,74 +81,136 @@ pub(super) fn render_glyph_editor(f: &mut Frame, app: &App) {
 
 fn render_editor_component_list(f: &mut Frame, app: &App, area: Rect) {
     let focused = app.editor.focus == GlyphEditorFocus::ComponentList;
-    let block = panel_block("Components", focused);
+    let block = panel_block("Components  [Spc] group/move  [Del] delete", focused);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let palette = ComponentKind::all_palette();
-    let static_len = palette.len();
+    let static_len = ComponentKind::all_palette().len();
     let customs = app.glyph_registry.custom_components();
+    let display_idx = app.editor.display_idx;
+    let display_len = app.editor.display_rows.len();
+    let visible_h = inner.height as usize;
 
-    let mut all_items: Vec<ListItem> = palette
+    let scroll = if display_len > visible_h && display_idx >= visible_h {
+        (display_idx + 1).saturating_sub(visible_h).min(display_len.saturating_sub(visible_h))
+    } else {
+        0
+    };
+
+    // If group picker is active, render it instead of the list.
+    if app.editor.group_picker_active {
+        let groups = &app.config.groups;
+        let picker_h = (groups.len() + 1).min(visible_h) as u16;
+        let picker_w = inner.width.min(28);
+        let picker_area = ratatui::layout::Rect::new(inner.x, inner.y, picker_w, picker_h);
+
+        f.render_widget(
+            Paragraph::new("").style(Style::default().bg(Color::Rgb(30, 30, 50))),
+            picker_area,
+        );
+
+        let mut picker_lines: Vec<Line> = Vec::new();
+        for (gi, group) in groups.iter().enumerate() {
+            let sel = gi == app.editor.group_picker_idx;
+            let style = if sel {
+                Style::default().fg(Color::Black).bg(Color::Rgb(180, 160, 60)).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Rgb(200, 190, 120))
+            };
+            picker_lines.push(Line::from(Span::styled(
+                format!(" {:<25}", &group.name[..group.name.len().min(25)]),
+                style,
+            )));
+        }
+        let new_sel = app.editor.group_picker_idx >= groups.len();
+        let new_style = if new_sel {
+            Style::default().fg(Color::Black).bg(Color::Rgb(60, 160, 60)).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Rgb(60, 140, 60))
+        };
+        picker_lines.push(Line::from(Span::styled(" [+ New Group]           ", new_style)));
+
+        f.render_widget(
+            Paragraph::new(picker_lines).style(Style::default().bg(Color::Rgb(30, 30, 50))),
+            picker_area,
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = app.editor.display_rows
         .iter()
         .enumerate()
-        .map(|(i, &kind)| {
-            let g = app.glyph_registry.resolve(kind, app.pal.selected_material, app.pal.selected_diameter);
-            let sym = g.symbol;
-            let [r, gr, b] = g.fg;
-            let label = format!("{sym} {}", kind.label());
-            if i == app.editor.kind_idx {
-                ListItem::new(format!("> {label}"))
-                    .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            } else {
-                ListItem::new(format!("  {label}"))
-                    .style(Style::default().fg(Color::Rgb(r, gr, b)))
+        .skip(scroll)
+        .take(visible_h)
+        .map(|(row_i, row)| {
+            match row {
+                EditorDisplayRow::GroupHeader { group_idx } => {
+                    let group = app.config.groups.get(*group_idx);
+                    let name = group.map(|g| g.name.as_str()).unwrap_or("?");
+                    let collapsed = group.map(|g| g.collapsed).unwrap_or(false);
+                    let arrow = if collapsed { '▶' } else { '▼' };
+                    let is_selected = row_i == display_idx;
+                    let style = if is_selected {
+                        Style::default().fg(Color::Rgb(220, 200, 80)).add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                    } else {
+                        Style::default().fg(Color::Rgb(160, 140, 60))
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{arrow} {name}"), style),
+                    ]))
+                }
+                EditorDisplayRow::Component { kind_idx } => {
+                    let i = *kind_idx;
+                    let is_selected = row_i == display_idx;
+                    if i < static_len {
+                        let kind = ComponentKind::all_palette()[i];
+                        let g = app.glyph_registry.resolve(kind, app.pal.selected_material, app.pal.selected_diameter);
+                        let sym = g.symbol;
+                        let [r, gr, b] = g.fg;
+                        let label = format!("  {sym} {}", kind.label());
+                        if is_selected {
+                            ListItem::new(format!("> {label}"))
+                                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                        } else {
+                            ListItem::new(format!("  {label}"))
+                                .style(Style::default().fg(Color::Rgb(r, gr, b)))
+                        }
+                    } else {
+                        let ci = i - static_len;
+                        if ci < customs.len() {
+                            let def = &customs[ci];
+                            let [r, gr, b] = def.glyph.fg;
+                            let label = format!("  {} {}", def.glyph.symbol, def.label);
+                            if is_selected {
+                                ListItem::new(format!("> {label}"))
+                                    .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                            } else {
+                                ListItem::new(format!("  {label}"))
+                                    .style(Style::default().fg(Color::Rgb(r, gr, b)))
+                            }
+                        } else {
+                            ListItem::new("  ?".to_string())
+                                .style(Style::default().fg(Color::DarkGray))
+                        }
+                    }
+                }
             }
         })
         .collect();
 
-    for (ci, def) in customs.iter().enumerate() {
-        let i = static_len + ci;
-        let [r, gr, b] = def.glyph.fg;
-        let label = format!("{} {}", def.glyph.symbol, def.label);
-        if i == app.editor.kind_idx {
-            all_items.push(
-                ListItem::new(format!("> {label}"))
-                    .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            );
-        } else {
-            all_items.push(
-                ListItem::new(format!("  {label}"))
-                    .style(Style::default().fg(Color::Rgb(r, gr, b))),
-            );
-        }
-    }
-
-    let total = all_items.len();
-    let visible_h = inner.height as usize;
-    let scroll = if total > visible_h && app.editor.kind_idx >= visible_h {
-        (app.editor.kind_idx + 1).saturating_sub(visible_h).min(total.saturating_sub(visible_h))
-    } else {
-        0
-    };
-    let items: Vec<ListItem> = all_items.into_iter().skip(scroll).take(visible_h).collect();
     f.render_widget(List::new(items), inner);
 
     // Scrollbar
-    if total > visible_h && visible_h > 0 {
+    if display_len > visible_h && visible_h > 0 {
         use ratatui::text::Span as S;
         let bar_len = visible_h;
-        let bar_h = ((bar_len * bar_len) / total).max(1).min(bar_len);
-        let max_scroll = total.saturating_sub(visible_h);
+        let bar_h = ((bar_len * bar_len) / display_len).max(1).min(bar_len);
+        let max_scroll = display_len.saturating_sub(visible_h);
         let bar_y = if max_scroll == 0 { 0 } else { scroll * (bar_len - bar_h) / max_scroll };
         let bar_col = inner.x + inner.width.saturating_sub(1);
         for i in 0..bar_len {
             let in_bar = i >= bar_y && i < bar_y + bar_h;
-            let (ch, col) = if in_bar {
-                ('█', Color::Rgb(70, 70, 100))
-            } else {
-                ('░', Color::Rgb(25, 25, 35))
-            };
+            let (ch, col) = if in_bar { ('█', Color::Rgb(70, 70, 100)) } else { ('░', Color::Rgb(25, 25, 35)) };
             f.render_widget(
                 ratatui::widgets::Paragraph::new(S::styled(ch.to_string(), Style::default().fg(col))),
                 ratatui::layout::Rect::new(bar_col, inner.y + i as u16, 1, 1),
@@ -389,6 +451,8 @@ fn render_editor_status(f: &mut Frame, app: &App, area: Rect) {
             TextEditTarget::AddGlyphFile   => "",
             TextEditTarget::CustomRgb      => "Custom RGB (R,G,B): ",
             TextEditTarget::BuildCustomRgb => "",
+            TextEditTarget::NewGroupName   => "New group name: ",
+            TextEditTarget::GroupAssign    => "Assign to group (name): ",
             TextEditTarget::LabelText | TextEditTarget::NoteText | TextEditTarget::SourcePressure
             | TextEditTarget::PrvSetpoint | TextEditTarget::LinkPath | TextEditTarget::CostPrice => "",
         };

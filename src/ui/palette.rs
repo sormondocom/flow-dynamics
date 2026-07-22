@@ -104,125 +104,269 @@ pub(super) fn render_palette(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let visible_h = list_chunks[1].height as usize;
-    let palette_len = app.pal.palette.len();
-    let pal_scroll = if palette_len > visible_h && app.pal.palette_idx >= visible_h {
-        (app.pal.palette_idx + 1).saturating_sub(visible_h).min(palette_len.saturating_sub(visible_h))
-    } else {
-        0
-    };
 
-    let search_query = if app.pal.palette_search_active && !app.pal.palette_search.is_empty() {
-        Some(app.pal.palette_search.to_lowercase())
-    } else {
-        None
-    };
-
-    let items: Vec<ListItem> = app
-        .pal.palette
-        .iter()
-        .enumerate()
-        .skip(pal_scroll)
-        .take(visible_h)
-        .map(|(i, kind)| {
-            let custom_ci = app.pal.palette_custom_indices.get(i).copied().flatten();
-            let (sym, display_label, [r, gr, b]) = if *kind == ComponentKind::Custom {
-                let customs = app.glyph_registry.custom_components();
-                if let Some(ci) = custom_ci.filter(|&ci| ci < customs.len()) {
-                    let def = &customs[ci];
-                    (def.glyph.symbol, def.label.as_str(), def.glyph.fg)
-                } else {
-                    ('?', "Custom Comp", [150u8, 150, 150])
-                }
-            } else {
-                let g = app.glyph_registry.resolve(*kind, app.pal.selected_material, app.pal.selected_diameter);
-                (g.symbol, kind.label(), g.fg)
-            };
-            let selected = i == app.pal.palette_idx;
-            // Dim items that don't match the active search query.
-            let matches = search_query.as_ref().map(|q| app.palette_item_matches(i, q)).unwrap_or(true);
-            let len_text = if matches!(kind, ComponentKind::PipeH | ComponentKind::PipeV) {
-                let in_val = (app.pal.default_lengths.get(kind).copied().unwrap_or(1.0) * 12.0).round() as i32;
-                format!("{:>3}\"", in_val)
-            } else if kind.has_arm_stubs() {
-                let arm = app.pal.default_arm_lengths.get(kind).copied().unwrap_or([0.0; 4]);
-                let (n, s, e, w) = kind.connections();
-                let dirs: [(&str, bool, f32); 4] = [("N", n, arm[0]), ("S", s, arm[1]), ("E", e, arm[2]), ("W", w, arm[3])];
-                dirs.iter()
-                    .filter(|(_, active, _)| *active)
-                    .map(|(d, _, ft)| {
-                        let in_val = (ft * 12.0).round() as i32;
-                        if in_val > 0 { format!("{}:{:>2}\"", d, in_val) } else { format!("{}:--", d) }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            } else {
-                String::new()
-            };
-            let has_len = !len_text.is_empty();
-
-            let (name_style, sep_style, len_style) = if selected {
-                (
-                    Style::default().fg(Color::Rgb(190, 200, 215)).add_modifier(Modifier::BOLD),
-                    Style::default().fg(Color::Rgb(80, 80, 80)),
-                    if has_len {
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    // ── Search mode: flat list rendering (unchanged) ──────────────────────────
+    if app.pal.palette_search_active {
+        let palette_len = app.pal.palette.len();
+        let pal_scroll = if palette_len > visible_h && app.pal.palette_idx >= visible_h {
+            (app.pal.palette_idx + 1).saturating_sub(visible_h).min(palette_len.saturating_sub(visible_h))
+        } else {
+            0
+        };
+        let search_query = if !app.pal.palette_search.is_empty() {
+            Some(app.pal.palette_search.to_lowercase())
+        } else {
+            None
+        };
+        let items: Vec<ListItem> = app
+            .pal.palette
+            .iter()
+            .enumerate()
+            .skip(pal_scroll)
+            .take(visible_h)
+            .map(|(i, kind)| {
+                let custom_ci = app.pal.palette_custom_indices.get(i).copied().flatten();
+                let (sym, display_label, [r, gr, b]) = if *kind == ComponentKind::Custom {
+                    let customs = app.glyph_registry.custom_components();
+                    if let Some(ci) = custom_ci.filter(|&ci| ci < customs.len()) {
+                        let def = &customs[ci];
+                        (def.glyph.symbol, def.label.as_str(), def.glyph.fg)
                     } else {
-                        Style::default().fg(Color::DarkGray)
-                    },
-                )
-            } else if !matches {
-                // Dim non-matching items during search.
-                (
-                    Style::default().fg(Color::Rgb(45, 45, 45)),
-                    Style::default().fg(Color::Rgb(30, 30, 30)),
-                    Style::default().fg(Color::Rgb(35, 35, 35)),
-                )
-            } else {
-                (
-                    Style::default().fg(Color::Rgb(r, gr, b)),
-                    Style::default().fg(Color::Rgb(40, 40, 40)),
-                    Style::default().fg(Color::Rgb(80, 80, 80)),
-                )
-            };
+                        ('?', "Custom Comp", [150u8, 150, 150])
+                    }
+                } else {
+                    let g = app.glyph_registry.resolve(*kind, app.pal.selected_material, app.pal.selected_diameter);
+                    (g.symbol, kind.label(), g.fg)
+                };
+                let selected = i == app.pal.palette_idx;
+                let matches = search_query.as_ref().map(|q| app.palette_item_matches(i, q)).unwrap_or(true);
+                let len_text = if matches!(kind, ComponentKind::PipeH | ComponentKind::PipeV) {
+                    let in_val = (app.pal.default_lengths.get(kind).copied().unwrap_or(1.0) * 12.0).round() as i32;
+                    format!("{:>3}\"", in_val)
+                } else if kind.has_arm_stubs() {
+                    let arm = app.pal.default_arm_lengths.get(kind).copied().unwrap_or([0.0; 4]);
+                    let (n, s, e, w) = kind.connections();
+                    let dirs: [(&str, bool, f32); 4] = [("N", n, arm[0]), ("S", s, arm[1]), ("E", e, arm[2]), ("W", w, arm[3])];
+                    dirs.iter()
+                        .filter(|(_, active, _)| *active)
+                        .map(|(d, _, ft)| {
+                            let in_val = (ft * 12.0).round() as i32;
+                            if in_val > 0 { format!("{}:{:>2}\"", d, in_val) } else { format!("{}:--", d) }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    String::new()
+                };
+                let has_len = !len_text.is_empty();
+                let (name_style, sep_style, len_style) = if selected {
+                    (
+                        Style::default().fg(Color::Rgb(190, 200, 215)).add_modifier(Modifier::BOLD),
+                        Style::default().fg(Color::Rgb(80, 80, 80)),
+                        if has_len { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) }
+                        else { Style::default().fg(Color::DarkGray) },
+                    )
+                } else if !matches {
+                    (
+                        Style::default().fg(Color::Rgb(45, 45, 45)),
+                        Style::default().fg(Color::Rgb(30, 30, 30)),
+                        Style::default().fg(Color::Rgb(35, 35, 35)),
+                    )
+                } else {
+                    (
+                        Style::default().fg(Color::Rgb(r, gr, b)),
+                        Style::default().fg(Color::Rgb(40, 40, 40)),
+                        Style::default().fg(Color::Rgb(80, 80, 80)),
+                    )
+                };
+                let name_text = if selected {
+                    format!(">[{sym} {display_label:<14}]")
+                } else {
+                    format!("  {sym} {display_label:<15}")
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(name_text, name_style),
+                    Span::styled("│", sep_style),
+                    Span::styled(format!(" {len_text}"), len_style),
+                ]))
+            })
+            .collect();
+        f.render_widget(List::new(items), list_chunks[1]);
+        if palette_len > visible_h && visible_h > 0 {
+            let bar_len = visible_h;
+            let bar_h = ((bar_len * bar_len) / palette_len).max(1).min(bar_len);
+            let max_scroll = palette_len.saturating_sub(visible_h);
+            let bar_y = if max_scroll == 0 { 0 } else { pal_scroll * (bar_len - bar_h) / max_scroll };
+            let bar_col = list_chunks[1].x + list_chunks[1].width.saturating_sub(1);
+            for i in 0..bar_len {
+                let in_bar = i >= bar_y && i < bar_y + bar_h;
+                let (ch, col) = if in_bar { ('█', Color::Rgb(70, 70, 100)) } else { ('░', Color::Rgb(25, 25, 35)) };
+                f.render_widget(
+                    Paragraph::new(Span::styled(ch.to_string(), Style::default().fg(col))),
+                    ratatui::layout::Rect::new(bar_col, list_chunks[1].y + i as u16, 1, 1),
+                );
+            }
+        }
+    } else {
+        // ── Group-aware display row rendering ─────────────────────────────────
+        use crate::palette_state::PaletteDisplayRow;
 
-            // Selected:   ">[{sym} {label:<14}]"  = 2+1+1+14+1 = 19 chars
-            // Unselected: "  {sym} {label:<15}"   = 2+1+1+15   = 19 chars
-            // Both keep the │ separator at the same column as the header.
-            let name_text = if selected {
-                format!(">[{sym} {display_label:<14}]")
-            } else {
-                format!("  {sym} {display_label:<15}")
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(name_text, name_style),
-                Span::styled("│", sep_style),
-                Span::styled(format!(" {len_text}"), len_style),
-            ]))
-        })
-        .collect();
+        let display_len = app.pal.display_rows.len();
+        let display_idx = app.pal.display_idx;
+        let pal_scroll = if display_len > visible_h && display_idx >= visible_h {
+            (display_idx + 1).saturating_sub(visible_h).min(display_len.saturating_sub(visible_h))
+        } else {
+            0
+        };
 
-    f.render_widget(List::new(items), list_chunks[1]);
+        let items: Vec<ListItem> = app.pal.display_rows
+            .iter()
+            .enumerate()
+            .skip(pal_scroll)
+            .take(visible_h)
+            .map(|(row_i, row)| {
+                match row {
+                    PaletteDisplayRow::GroupHeader { group_idx } => {
+                        let group = app.config.groups.get(*group_idx);
+                        let name = group.map(|g| g.name.as_str()).unwrap_or("?");
+                        let collapsed = group.map(|g| g.collapsed).unwrap_or(false);
+                        let arrow = if collapsed { '▶' } else { '▼' };
+                        let is_selected = row_i == display_idx;
+                        let style = if is_selected {
+                            Style::default().fg(Color::Rgb(220, 200, 80)).add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                        } else {
+                            Style::default().fg(Color::Rgb(160, 140, 60))
+                        };
+                        ListItem::new(Line::from(vec![
+                            Span::styled(format!("{arrow} {name}"), style),
+                        ]))
+                    }
+                    PaletteDisplayRow::Component { flat_idx } => {
+                        let i = *flat_idx;
+                        let kind = &app.pal.palette[i];
+                        let custom_ci = app.pal.palette_custom_indices.get(i).copied().flatten();
+                        let (sym, display_label, [r, gr, b]) = if *kind == ComponentKind::Custom {
+                            let customs = app.glyph_registry.custom_components();
+                            if let Some(ci) = custom_ci.filter(|&ci| ci < customs.len()) {
+                                let def = &customs[ci];
+                                (def.glyph.symbol, def.label.as_str(), def.glyph.fg)
+                            } else {
+                                ('?', "Custom Comp", [150u8, 150, 150])
+                            }
+                        } else {
+                            let g = app.glyph_registry.resolve(*kind, app.pal.selected_material, app.pal.selected_diameter);
+                            (g.symbol, kind.label(), g.fg)
+                        };
+                        let selected = row_i == display_idx;
+                        let len_text = if matches!(kind, ComponentKind::PipeH | ComponentKind::PipeV) {
+                            let in_val = (app.pal.default_lengths.get(kind).copied().unwrap_or(1.0) * 12.0).round() as i32;
+                            format!("{:>3}\"", in_val)
+                        } else if kind.has_arm_stubs() {
+                            let arm = app.pal.default_arm_lengths.get(kind).copied().unwrap_or([0.0; 4]);
+                            let (n, s, e, w) = kind.connections();
+                            let dirs: [(&str, bool, f32); 4] = [("N", n, arm[0]), ("S", s, arm[1]), ("E", e, arm[2]), ("W", w, arm[3])];
+                            dirs.iter()
+                                .filter(|(_, active, _)| *active)
+                                .map(|(d, _, ft)| {
+                                    let in_val = (ft * 12.0).round() as i32;
+                                    if in_val > 0 { format!("{}:{:>2}\"", d, in_val) } else { format!("{}:--", d) }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        } else {
+                            String::new()
+                        };
+                        let has_len = !len_text.is_empty();
+                        let (name_style, sep_style, len_style) = if selected {
+                            (
+                                Style::default().fg(Color::Rgb(190, 200, 215)).add_modifier(Modifier::BOLD),
+                                Style::default().fg(Color::Rgb(80, 80, 80)),
+                                if has_len { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) }
+                                else { Style::default().fg(Color::DarkGray) },
+                            )
+                        } else {
+                            (
+                                Style::default().fg(Color::Rgb(r, gr, b)),
+                                Style::default().fg(Color::Rgb(40, 40, 40)),
+                                Style::default().fg(Color::Rgb(80, 80, 80)),
+                            )
+                        };
+                        // 2-space indent prefix for components inside a group
+                        let name_text = if selected {
+                            format!("  >[{sym} {display_label:<12}]")
+                        } else {
+                            format!("    {sym} {display_label:<13}")
+                        };
+                        ListItem::new(Line::from(vec![
+                            Span::styled(name_text, name_style),
+                            Span::styled("│", sep_style),
+                            Span::styled(format!(" {len_text}"), len_style),
+                        ]))
+                    }
+                }
+            })
+            .collect();
 
-    // Scrollbar for the palette list
-    if palette_len > visible_h && visible_h > 0 {
-        let bar_len = visible_h;
-        let bar_h = ((bar_len * bar_len) / palette_len).max(1).min(bar_len);
-        let max_scroll = palette_len.saturating_sub(visible_h);
-        let bar_y = if max_scroll == 0 { 0 } else { pal_scroll * (bar_len - bar_h) / max_scroll };
-        let bar_col = list_chunks[1].x + list_chunks[1].width.saturating_sub(1);
-        for i in 0..bar_len {
-            let in_bar = i >= bar_y && i < bar_y + bar_h;
-            let (ch, col) = if in_bar {
-                ('█', Color::Rgb(70, 70, 100))
-            } else {
-                ('░', Color::Rgb(25, 25, 35))
-            };
+        f.render_widget(List::new(items), list_chunks[1]);
+
+        // Scrollbar for display rows
+        if display_len > visible_h && visible_h > 0 {
+            let bar_len = visible_h;
+            let bar_h = ((bar_len * bar_len) / display_len).max(1).min(bar_len);
+            let max_scroll = display_len.saturating_sub(visible_h);
+            let bar_y = if max_scroll == 0 { 0 } else { pal_scroll * (bar_len - bar_h) / max_scroll };
+            let bar_col = list_chunks[1].x + list_chunks[1].width.saturating_sub(1);
+            for i in 0..bar_len {
+                let in_bar = i >= bar_y && i < bar_y + bar_h;
+                let (ch, col) = if in_bar { ('█', Color::Rgb(70, 70, 100)) } else { ('░', Color::Rgb(25, 25, 35)) };
+                f.render_widget(
+                    Paragraph::new(Span::styled(ch.to_string(), Style::default().fg(col))),
+                    ratatui::layout::Rect::new(bar_col, list_chunks[1].y + i as u16, 1, 1),
+                );
+            }
+        }
+
+        // ── Group picker overlay ──────────────────────────────────────────────
+        if app.pal.group_picker_active {
+            let groups = &app.config.groups;
+            let picker_h = (groups.len() + 2).min(visible_h) as u16;
+            let picker_w = 28u16.min(list_chunks[1].width);
+            let picker_x = list_chunks[1].x;
+            let picker_y = list_chunks[1].y + (display_idx.saturating_sub(pal_scroll)) as u16;
+            let picker_y = picker_y.min(list_chunks[1].y + list_chunks[1].height.saturating_sub(picker_h));
+            let picker_area = ratatui::layout::Rect::new(picker_x, picker_y, picker_w, picker_h);
+
+            // Clear the background
             f.render_widget(
-                Paragraph::new(Span::styled(
-                    ch.to_string(),
-                    Style::default().fg(col),
-                )),
-                ratatui::layout::Rect::new(bar_col, list_chunks[1].y + i as u16, 1, 1),
+                Paragraph::new("").style(Style::default().bg(Color::Rgb(30, 30, 50))),
+                picker_area,
+            );
+
+            let mut picker_lines: Vec<Line> = Vec::new();
+            for (gi, group) in groups.iter().enumerate() {
+                let sel = gi == app.pal.group_picker_idx;
+                let style = if sel {
+                    Style::default().fg(Color::Black).bg(Color::Rgb(180, 160, 60)).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Rgb(200, 190, 120))
+                };
+                picker_lines.push(Line::from(Span::styled(
+                    format!(" {:<25}", group.name),
+                    style,
+                )));
+            }
+            // "[+ New Group]" entry
+            let new_sel = app.pal.group_picker_idx >= groups.len();
+            let new_style = if new_sel {
+                Style::default().fg(Color::Black).bg(Color::Rgb(60, 160, 60)).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Rgb(60, 140, 60))
+            };
+            picker_lines.push(Line::from(Span::styled(" [+ New Group]           ", new_style)));
+
+            f.render_widget(
+                Paragraph::new(picker_lines).style(Style::default().bg(Color::Rgb(30, 30, 50))),
+                picker_area,
             );
         }
     }

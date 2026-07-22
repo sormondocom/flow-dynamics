@@ -12,7 +12,7 @@ use ratatui::{
 use crate::app::{App, AppMode};
 use crate::components::{ComponentKind, ValveState};
 use crate::fluid::FluidType;
-use crate::glyphs::GlyphRegistry;
+use crate::glyphs::{GlyphRegistry, port_face_for, port_connector_char};
 use crate::simulation::FlowState;
 
 use super::{composite_box_char, fluid_bg, fluid_fg, scale_rgb, RenderPhaseUs};
@@ -1139,12 +1139,9 @@ fn cell_override_or_default(
             if let Some(ch) = def.get_cell(dr, dc) {
                 return ch;
             }
-            // Port cells — face outward toward their pipe.
+            // Port cells — show connector facing the nearest edge.
             if def.get_port_at(dr, dc).is_some() {
-                return if dc == 0        { '╣' }  // West edge  → opens left
-                    else if dc + 1 == fw { '╠' }  // East edge  → opens right
-                    else if dr == 0      { '╩' }  // North edge → opens up
-                    else                 { '╦' }; // South edge → opens down
+                return port_connector_char(&port_face_for(dr, dc, fw, fh));
             }
         }
         return composite_box_char(fw, fh, port_row, dr, dc, label, None, true);

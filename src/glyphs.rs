@@ -131,6 +131,27 @@ pub enum PortFace {
     South,
 }
 
+pub fn port_connector_char(face: &PortFace) -> char {
+    match face {
+        PortFace::West  => '╣',
+        PortFace::East  => '╠',
+        PortFace::North => '╩',
+        PortFace::South => '╦',
+    }
+}
+
+pub fn port_face_for(row: usize, col: usize, canvas_w: usize, canvas_h: usize) -> PortFace {
+    let dist_north = row;
+    let dist_south = canvas_h.saturating_sub(1 + row);
+    let dist_west  = col;
+    let dist_east  = canvas_w.saturating_sub(1 + col);
+    let min_dist   = dist_north.min(dist_south).min(dist_west).min(dist_east);
+    if dist_north == min_dist { PortFace::North }
+    else if dist_south == min_dist { PortFace::South }
+    else if dist_west  == min_dist { PortFace::West  }
+    else                           { PortFace::East  }
+}
+
 /// The functional role of a port on a composite component.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PortKind {
@@ -610,6 +631,12 @@ pub fn mat_key(m: PipeMaterial) -> &'static str {
 
 // ── Glyph editor UI state ─────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum EditorDisplayRow {
+    GroupHeader { group_idx: usize },
+    Component   { kind_idx: usize },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlyphEditorFocus {
     ComponentList,
@@ -639,6 +666,11 @@ pub struct GlyphEditorState {
     pub composite_viewport: (usize, usize),
     pub focus: GlyphEditorFocus,
     pub status: String,
+    pub display_rows: Vec<EditorDisplayRow>,
+    pub display_idx: usize,
+    pub group_picker_active: bool,
+    pub group_picker_idx: usize,
+    pub group_picker_for_kind: Option<usize>,
 }
 
 impl Default for GlyphEditorState {
@@ -654,6 +686,11 @@ impl Default for GlyphEditorState {
             composite_viewport: (0, 0),
             focus: GlyphEditorFocus::ComponentList,
             status: "  [Tab] switch panel  [Enter] apply  [N] new  [R] rename  [C] copy  [W] composite  [Del] clear cell  [S] save  [L] load  [G/Q] exit".into(),
+            display_rows: Vec::new(),
+            display_idx: 0,
+            group_picker_active: false,
+            group_picker_idx: 0,
+            group_picker_for_kind: None,
         }
     }
 }
@@ -708,6 +745,7 @@ impl GlyphEditorState {
         };
     }
 
+    #[allow(dead_code)]
     pub fn nav_kind(&mut self, delta: isize, total_len: usize) {
         self.kind_idx = (self.kind_idx as isize + delta).rem_euclid(total_len as isize) as usize;
     }
