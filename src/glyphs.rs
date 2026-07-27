@@ -185,8 +185,10 @@ pub struct CustomCompDef {
     pub label: String,
     pub glyph: GlyphDef,
     /// Port connections: [north, south, east, west].
+    #[serde(default)]
     pub connections_nsew: [bool; 4],
     /// Equivalent friction length in pipe diameters.
+    #[serde(default)]
     pub equiv_length_d: f32,
     /// If Some((w, h)), this component is rendered as a w×h composite box with the label inside.
     /// If None, it is a single-cell glyph component.  Minimum meaningful size is 3×3.
