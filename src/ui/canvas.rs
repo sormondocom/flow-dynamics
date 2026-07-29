@@ -889,13 +889,28 @@ fn cell_char_and_style<'a>(
 
     // ── Composite anchor (W port / left border char at dr=port_row, dc=0) ──
     if comp.effective_is_composite() {
-        let (fw, fh) = comp.effective_footprint();
-        let pr = comp.effective_port_row();
-        let label = comp.effective_composite_label();
-        let base_ch = cell_override_or_default(app, comp, pr, 0, fw, fh, pr, label);
-        let ch = composite_animated_char(app, sim_flat, comp, pr, 0, fw, fh, pr, base_ch, row, col);
-        let style = composite_style(app, sim_flat, row, col, comp, pr, 0, fw, fh, is_cursor);
-        return (ch, style);
+        // BallValveH/V placed into already-occupied cells lose their satellites.
+        // In that case, render as the legacy single-cell ● so old diagrams keep working.
+        let is_legacy_valve = matches!(
+            comp.kind,
+            ComponentKind::BallValveH | ComponentKind::BallValveV
+        ) && (if comp.kind == ComponentKind::BallValveH {
+            !(col + 1 < app.canvas.grid.width
+                && app.canvas.grid.satellite_anchor(row, col + 1) == Some((row, col)))
+        } else {
+            !(row + 1 < app.canvas.grid.height
+                && app.canvas.grid.satellite_anchor(row + 1, col) == Some((row, col)))
+        });
+
+        if !is_legacy_valve {
+            let (fw, fh) = comp.effective_footprint();
+            let pr = comp.effective_port_row();
+            let label = comp.effective_composite_label();
+            let base_ch = cell_override_or_default(app, comp, pr, 0, fw, fh, pr, label);
+            let ch = composite_animated_char(app, sim_flat, comp, pr, 0, fw, fh, pr, base_ch, row, col);
+            let style = composite_style(app, sim_flat, row, col, comp, pr, 0, fw, fh, is_cursor);
+            return (ch, style);
+        }
     }
 
     let glyph = resolve_glyph_for_comp(app, comp);
@@ -1103,6 +1118,23 @@ fn composite_style(
                 }
                 _ => Style::default().fg(Color::Rgb(r, g, b)),
             },
+            ComponentKind::BallValveH | ComponentKind::BallValveV => {
+                if comp.valve_state == Some(ValveState::Closed) {
+                    return Style::default().fg(Color::Red);
+                }
+                match state {
+                    FlowState::Flowing => {
+                        let fg = scale_rgb(r, g, b, 1.3);
+                        Style::default().fg(fg).bg(fluid_bg(app.sim.fluid_type))
+                    }
+                    FlowState::Pressurized => {
+                        let (fr, fg2, fb) = app.sim.fluid_type.fg_color();
+                        let dim = scale_rgb(fr, fg2, fb, 0.3);
+                        Style::default().fg(dim).bg(fluid_bg(app.sim.fluid_type))
+                    }
+                    _ => Style::default().fg(Color::Rgb(r, g, b)),
+                }
+            }
             _ => match state {
                 FlowState::Flowing => {
                     let fg = scale_rgb(r, g, b, 1.3);
@@ -1328,6 +1360,26 @@ fn composite_animated_char(
             }
         }
 
+        // ── Ball Valve H (3×1: ═●═) ─────────────────────────────────────────
+        // dc=0 left wing, dc=1 ball/X, dc=2 right wing.
+        ComponentKind::BallValveH => {
+            let closed = comp.valve_state == Some(ValveState::Closed);
+            match dc {
+                1 => if closed { 'X' } else { '\u{25CF}' },  // ●
+                _ => '\u{2550}',                               // ═ (wings)
+            }
+        }
+
+        // ── Ball Valve V (1×3: ║●║) ─────────────────────────────────────────
+        // dr=0 top wing, dr=1 ball/X, dr=2 bottom wing.
+        ComponentKind::BallValveV => {
+            let closed = comp.valve_state == Some(ValveState::Closed);
+            match dr {
+                1 => if closed { 'X' } else { '\u{25CF}' },  // ●
+                _ => '\u{2551}',                               // ║ (wings)
+            }
+        }
+
         _ => default_ch,
     }
 }
@@ -1421,6 +1473,16 @@ fn composite_ghost_cell(app: &App, row: usize, col: usize) -> Option<(char, Styl
     if dr_i < 0 || dc_i < 0 { return None; }
     let (dr, dc) = (dr_i as usize, dc_i as usize);
     if dr >= fh || dc >= fw { return None; }
+
+    // BallValveH/V use hand-drawn wing+ball characters instead of the generic box.
+    if kind == ComponentKind::BallValveH || kind == ComponentKind::BallValveV {
+        let ch = if kind == ComponentKind::BallValveH {
+            match dc { 1 => '\u{25CF}', _ => '\u{2550}' }  // ●, ═
+        } else {
+            match dr { 1 => '\u{25CF}', _ => '\u{2551}' }  // ●, ║
+        };
+        return Some((ch, ghost_style(dr == port_row && dc == 0)));
+    }
 
     let label = kind.composite_label();
     let (_, _, ae, aw) = kind.connections();

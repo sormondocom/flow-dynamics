@@ -5,19 +5,6 @@ use crate::fluid::FluidType;
 use crate::glyphs::{GlyphRegistry, PortFace};
 use crate::grid::Grid;
 
-// ── Hazen-Williams constants ──────────────────────────────────────────────────
-// Q (GPM) = HW_K × C × d_in^2.63 × (ΔP_psi / L_ft)^N_INV
-// ΔP_psi  = R × Q^N_EXP   where R = L / (HW_R_CONST × C^N_EXP × d_in^4.871)
-
-const N_EXP: f32 = 1.852;
-const N_INV: f32 = 0.5403; // 1 / 1.852
-const HW_R_CONST: f32 = 0.4879; // HW_K^1.852 = 0.6790^1.852
-
-// Velocity: V_fps = VEL_K × Q_gpm / d_in²
-const VEL_K: f32 = 0.4085;
-
-// Blocked / effectively-infinite resistance sentinel
-const R_INF: f32 = 1.0e12;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -60,7 +47,7 @@ fn candidate_neighbors(
     if grid.satellite_anchor(r, c).is_some() { return vec![]; }
 
     let raw: Vec<(usize, usize)> = if comp.effective_is_composite() {
-        let fw = comp.effective_footprint().0;
+        let (fw, fh) = comp.effective_footprint();
         let mut n = Vec::new();
 
         // For custom composites with explicit ports, port external cells replace the
@@ -70,10 +57,36 @@ fn candidate_neighbors(
                 registry.custom_components().iter().any(|d| &d.id == id && !d.ports.is_empty())
             });
 
-        if !custom_has_ports {
+        // Legacy single-cell BallValve (satellite cells occupied — no satellites registered):
+        // fall back to the standard 4-neighbor scan so old diagrams stay connected.
+        let ball_valve_legacy = matches!(comp.kind, ComponentKind::BallValveH | ComponentKind::BallValveV)
+            && (if comp.kind == ComponentKind::BallValveH {
+                !(c + 1 < grid.width && grid.satellite_anchor(r, c + 1) == Some((r, c)))
+            } else {
+                !(r + 1 < grid.height && grid.satellite_anchor(r + 1, c) == Some((r, c)))
+            });
+
+        if ball_valve_legacy {
+            // Treat as ordinary single-cell component.
+            if r > 0 { n.push((r - 1, c)); }
+            if r + 1 < grid.height { n.push((r + 1, c)); }
             if c > 0 { n.push((r, c - 1)); }
-            if c + fw < grid.width { n.push((r, c + fw)); }
+            if c + 1 < grid.width { n.push((r, c + 1)); }
+        } else {
+        if !custom_has_ports {
+            if fw > 1 {
+                if c > 0 { n.push((r, c - 1)); }
+                if c + fw < grid.width { n.push((r, c + fw)); }
+            }
+            // Tall composite (fh > 1): N/S external ports one row beyond top/bottom.
+            if fh > 1 {
+                let pr = comp.effective_port_row();
+                if r >= pr && r - pr > 0 { n.push((r - pr - 1, c)); }       // North external
+                let bot = r + (fh - 1 - pr);
+                if bot + 1 < grid.height { n.push((bot + 1, c)); }           // South external
+            }
         }
+        } // end !ball_valve_legacy
 
         // Custom port external cells
         if let Some(id) = &comp.custom_id {
@@ -184,21 +197,18 @@ fn sim_are_connected(
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimResult {
-    let viscosity_scale = fluid.viscosity_scale();
+    let _ = fluid;
     let mut result = SimResult::default();
 
-    // ── Phase 1: BFS reachability (determines FlowState) ─────────────────────
+    // ── Collect sources and sinks ─────────────────────────────────────────────
     let mut sources = vec![];
     let mut sinks: HashSet<(usize, usize)> = HashSet::new();
-
-    let mut prv_nodes: Vec<(usize, usize)> = vec![];
 
     for r in 0..grid.height {
         for c in 0..grid.width {
             if let Some(comp) = grid.get(r, c) {
                 match comp.kind {
                     ComponentKind::Source => sources.push((r, c)),
-                    ComponentKind::PressureReducingValve => prv_nodes.push((r, c)),
                     ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet => {
                         sinks.insert((r, c));
                     }
@@ -216,6 +226,7 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
         result.warnings.push("No Drain (D) placed — system has no outlet.".into());
     }
 
+    // ── BFS reachability ──────────────────────────────────────────────────────
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut queue: VecDeque<(usize, usize)> = VecDeque::new();
     let mut propagated: HashSet<(usize, usize)> = HashSet::new();
@@ -253,6 +264,10 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
             if sinks.contains(&(nr, nc)) {
                 result.reached_sink = true;
             }
+            // Record BFS propagation direction for animation (first writer wins).
+            let dir_r = if r < nr { 1i8 } else if r > nr { -1i8 } else { 0i8 };
+            let dir_c = if c < nc { 1i8 } else if c > nc { -1i8 } else { 0i8 };
+            result.flow_dirs.entry((nr, nc)).or_insert((dir_r, dir_c));
         }
     }
 
@@ -290,301 +305,9 @@ pub fn simulate(grid: &Grid, fluid: FluidType, registry: &GlyphRegistry) -> SimR
         result.warnings.push("Flow does not reach any Drain — check connections.".into());
     }
 
-    // ── Phase 2: Hazen-Williams nodal pressure solver ─────────────────────────
-    // Collect the set of flowing nodes and build an adjacency map.
-    let flowing_nodes: Vec<(usize, usize)> = result
-        .cell_states
-        .iter()
-        .filter(|(_, s)| **s == FlowState::Flowing)
-        .map(|(&pos, _)| pos)
-        .collect();
-
-    if flowing_nodes.is_empty() {
-        return result;
-    }
-
-    // Build adjacency for flowing subgraph
-    let mut adjacency: HashMap<(usize, usize), Vec<(usize, usize)>> = HashMap::new();
-    for &pos in &flowing_nodes {
-        let (r, c) = pos;
-        let neighbors: Vec<(usize, usize)> = {
-            let comp = grid.get(r, c).unwrap();
-            candidate_neighbors(grid, r, c, comp, registry)
-                .into_iter()
-                .filter(|nb| {
-                    result.cell_states.get(nb) == Some(&FlowState::Flowing)
-                        && sim_are_connected(grid, r, c, nb.0, nb.1, registry)
-                })
-                .collect()
-        };
-        adjacency.insert(pos, neighbors);
-    }
-
-    // Precompute edge resistances
-    type EdgeKey = ((usize, usize), (usize, usize));
-    let mut edge_res: HashMap<EdgeKey, f32> = HashMap::new();
-    for (&pos, neighbors) in &adjacency {
-        for &nb in neighbors {
-            let key = if pos <= nb { (pos, nb) } else { (nb, pos) };
-            edge_res.entry(key).or_insert_with(|| {
-                let r_a = cell_resistance(grid, pos, viscosity_scale);
-                let r_b = cell_resistance(grid, nb, viscosity_scale);
-                if r_a >= R_INF / 2.0 || r_b >= R_INF / 2.0 {
-                    R_INF
-                } else {
-                    (r_a + r_b) / 2.0
-                }
-            });
-        }
-    }
-
-    let get_edge_r = |a: (usize, usize), b: (usize, usize)| -> f32 {
-        let key = if a <= b { (a, b) } else { (b, a) };
-        // Floor prevents division-by-zero in Newton-Raphson when both endpoints have
-        // zero equiv-length (e.g. Source ↔ PressureGauge). 1e-6 is effectively lossless.
-        edge_res.get(&key).unwrap_or(&R_INF).max(1e-6)
-    };
-
-    // Find max source pressure for initial guess
-    let max_source_p: f32 = sources
-        .iter()
-        .filter_map(|&s| grid.get(s.0, s.1).map(|c| c.source_pressure_psi))
-        .fold(60.0_f32, f32::max);
-
-    // Initialize pressures
-    let mut pressures: HashMap<(usize, usize), f32> = HashMap::new();
-    for &pos in &flowing_nodes {
-        let comp = grid.get(pos.0, pos.1);
-        let p = match comp.map(|c| c.kind) {
-            Some(ComponentKind::Source) => comp.unwrap().source_pressure_psi,
-            Some(ComponentKind::PressureReducingValve) => comp.unwrap().prv_setpoint_psi,
-            Some(ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet) => 0.0,
-            _ => max_source_p * 0.5,
-        };
-        pressures.insert(pos, p);
-    }
-
-    // Gauss-Seidel with local Newton-Raphson per interior node.
-    // Under-relaxation (ω=0.7) stabilises looped networks that would otherwise oscillate.
-    const OMEGA: f32 = 0.7;
-    let mut converged = false;
-    for _iter in 0..200 {
-        let mut max_change = 0.0_f32;
-
-        for &pos in &flowing_nodes {
-            let kind = grid.get(pos.0, pos.1).map(|c| c.kind);
-            if matches!(kind,
-                Some(ComponentKind::Source)
-                | Some(ComponentKind::PressureReducingValve)
-                | Some(ComponentKind::Sink)
-                | Some(ComponentKind::Toilet)
-                | Some(ComponentKind::Faucet)
-            ) {
-                continue;
-            }
-            let neighbors = match adjacency.get(&pos) {
-                Some(n) => n,
-                None => continue,
-            };
-            if neighbors.is_empty() {
-                continue;
-            }
-
-            let p_old = *pressures.get(&pos).unwrap_or(&0.0);
-            let mut p = p_old;
-
-            // Newton-Raphson: find P_pos s.t. sum of Q_pos_j = 0
-            for _ in 0..20 {
-                let mut f_val = 0.0_f32;
-                let mut df_val = 0.0_f32;
-
-                for &nb in neighbors {
-                    let p_nb = *pressures.get(&nb).unwrap_or(&0.0);
-                    let r = get_edge_r(pos, nb);
-                    if r >= R_INF / 2.0 {
-                        continue;
-                    }
-                    let dp = p - p_nb;
-                    let dp_abs = dp.abs().max(1e-7);
-                    // Q_ij = sign(dp) × (|dp| / R)^N_INV
-                    f_val += dp.signum() * (dp_abs / r).powf(N_INV);
-                    // dQ/dp = N_INV × |dp|^(N_INV-1) / R^N_INV
-                    df_val += N_INV * dp_abs.powf(N_INV - 1.0) / r.powf(N_INV);
-                }
-
-                if df_val.abs() < 1e-14 {
-                    break;
-                }
-                let corr = f_val / df_val;
-                p -= corr;
-                p = p.clamp(0.0, max_source_p);
-                if corr.abs() < 1e-4 {
-                    break;
-                }
-            }
-
-            // Apply under-relaxation to dampen oscillations in looped networks
-            let p_relaxed = p_old + OMEGA * (p - p_old);
-            let change = (p_relaxed - p_old).abs();
-            if change > max_change {
-                max_change = change;
-            }
-            pressures.insert(pos, p_relaxed);
-        }
-
-        if max_change < 0.01 {
-            converged = true;
-            break;
-        }
-    }
-
-    if !converged {
-        result.warnings.push(
-            "Solver did not fully converge — results may be approximate. \
-             Check for isolated loops or highly parallel paths.".into()
-        );
-    }
-
-    // ── Post-Phase-2: Compute flow_dirs from pressure gradient ───────────────
-    // For each flowing node, find the highest-pressure neighbour (upstream).
-    // Water flows FROM that neighbour INTO this node, so direction encodes
-    // "which way did the water come from" — matching the animation convention.
-    for &pos in &flowing_nodes {
-        let p_pos = *pressures.get(&pos).unwrap_or(&0.0);
-        if let Some(neighbors) = adjacency.get(&pos) {
-            let upstream = neighbors.iter()
-                .filter(|&&nb| {
-                    *pressures.get(&nb).unwrap_or(&0.0) > p_pos + 1e-4
-                })
-                .max_by(|&&a, &&b| {
-                    pressures.get(&a).unwrap_or(&0.0)
-                        .partial_cmp(pressures.get(&b).unwrap_or(&0.0))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-
-            if let Some(&(ur, uc)) = upstream {
-                let (r, c) = pos;
-                // dir_r = 1 means flow arrives from north (upstream is above)
-                let dir_r = if ur < r { 1i8 } else if ur > r { -1i8 } else { 0i8 };
-                let dir_c = if uc < c { 1i8 } else if uc > c { -1i8 } else { 0i8 };
-                result.flow_dirs.insert(pos, (dir_r, dir_c));
-            }
-        }
-    }
-
-    // ── Phase 3: Compute per-node flow data from solved pressures ─────────────
-    for &pos in &flowing_nodes {
-        let p = *pressures.get(&pos).unwrap_or(&0.0);
-        let comp = match grid.get(pos.0, pos.1) {
-            Some(c) => c,
-            None => continue,
-        };
-
-        // Sum of outflows to lower-pressure neighbours (inflows for sinks at P=0).
-        // Using outflows rather than max-edge correctly handles tees and crosses:
-        // a T-junction reports the total flow entering it (sum of both outflows ≈ inflow).
-        let is_sink = matches!(
-            comp.kind,
-            ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet
-        );
-        let flow_gpm: f32 = adjacency
-            .get(&pos)
-            .map(|nbs| {
-                nbs.iter()
-                    .map(|&nb| {
-                        let p_nb = *pressures.get(&nb).unwrap_or(&0.0);
-                        let r = get_edge_r(pos, nb);
-                        if r >= R_INF / 2.0 {
-                            return 0.0_f32;
-                        }
-                        // sinks sum inflows; everything else sums outflows
-                        let contributing = if is_sink { p_nb > p } else { p > p_nb };
-                        if !contributing {
-                            return 0.0_f32;
-                        }
-                        let dp = (p - p_nb).abs().max(1e-7);
-                        (dp / r).powf(N_INV)
-                    })
-                    .sum()
-            })
-            .unwrap_or(0.0);
-
-        let d = comp.diameter.inner_diameter_in();
-        let velocity = if d > 0.0 { VEL_K * flow_gpm / (d * d) } else { 0.0 };
-
-        result.flow_data.insert(
-            pos,
-            NodeFlowData {
-                pressure_psi: p,
-                flow_gpm,
-                velocity_fps: velocity,
-            },
-        );
-
-        // Warn when a sink's incoming pressure is below 20 PSI minimum
-        let is_fixture = matches!(comp.kind, ComponentKind::Sink | ComponentKind::Toilet | ComponentKind::Faucet | ComponentKind::BasinSink);
-        if is_fixture && p < 20.0 && p > 0.01 {
-            result.warnings.push(format!(
-                "Low pressure at fixture ({},{}): {:.1} PSI (min 20 PSI recommended).",
-                pos.0, pos.1, p
-            ));
-        }
-    }
-
-    // Summarise velocity violations across all pipe segments
-    let mut vel_violations: Vec<((usize, usize), f32, f32)> = Vec::new(); // (pos, actual, limit)
-    for (&pos, fd) in &result.flow_data {
-        if let Some(comp) = grid.get(pos.0, pos.1) {
-            if matches!(comp.kind, ComponentKind::PipeH | ComponentKind::PipeV) {
-                let limit = comp.material.max_velocity_fps();
-                if fd.velocity_fps > limit {
-                    vel_violations.push((pos, fd.velocity_fps, limit));
-                }
-            }
-        }
-    }
-    if !vel_violations.is_empty() {
-        // Sort by worst exceedance first for the summary message
-        vel_violations.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let (worst_pos, worst_vel, worst_lim) = vel_violations[0];
-        result.warnings.push(format!(
-            "{} pipe(s) exceed velocity limit — worst: {:.1} ft/s at ({},{}) (max {:.0} ft/s).",
-            vel_violations.len(), worst_vel, worst_pos.0, worst_pos.1, worst_lim
-        ));
-    }
-
     result
 }
 
-// ── Resistance helpers ────────────────────────────────────────────────────────
-
-/// Hazen-Williams resistance for a cell: ΔP_psi = R × Q_gpm^1.852
-fn cell_resistance(grid: &Grid, pos: (usize, usize), viscosity_scale: f32) -> f32 {
-    let comp = match grid.get(pos.0, pos.1) {
-        Some(c) => c,
-        None => return 0.0,
-    };
-
-    if !comp.is_passable() {
-        return R_INF;
-    }
-
-    let l_ft = comp.equiv_length_ft();
-    if l_ft <= 0.0 {
-        return 0.0;
-    }
-
-    let d_in = comp.diameter.inner_diameter_in();
-    let c = comp.material.c_value();
-
-    // R = L / (HW_R_CONST × C^1.852 × d^4.871) × viscosity_scale
-    let denom = HW_R_CONST * c.powf(N_EXP) * d_in.powf(4.871);
-    if denom < 1e-15 {
-        R_INF
-    } else {
-        (l_ft / denom) * viscosity_scale
-    }
-}
 
 // ── DWV Validation ───────────────────────────────────────────────────────────
 

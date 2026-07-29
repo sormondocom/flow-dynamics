@@ -124,10 +124,7 @@ impl FluidType {
         }
     }
 
-    /// Multiplicative scaling applied to Hazen-Williams pipe resistance.
-    ///
-    /// Water at 60 °F = 1.0 (baseline).  Higher values represent more viscous
-    /// fluids (higher pressure drop for the same flow rate).
+    #[allow(dead_code)]
     pub fn viscosity_scale(self) -> f32 {
         match self {
             Self::Water        =>  1.0,

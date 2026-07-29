@@ -57,7 +57,7 @@ pub enum PipeMaterial {
 }
 
 impl PipeMaterial {
-    /// Hazen-Williams C coefficient — higher = smoother = less friction
+    #[allow(dead_code)]
     pub fn c_value(self) -> f32 {
         match self {
             Self::Copper => 130.0,
@@ -570,12 +570,15 @@ impl ComponentKind {
             Self::Faucet => (5, 3),
             Self::WaterHeater => (15, 5),
             Self::BasinSink => (13, 5),
+            Self::BallValveH => (3, 1),
+            Self::BallValveV => (1, 3),
             _ => (1, 1),
         }
     }
 
     pub fn is_composite(self) -> bool {
-        self.footprint().0 > 1
+        let (fw, fh) = self.footprint();
+        fw > 1 || fh > 1
     }
 
     /// Row within the footprint (0-indexed from top) that holds the E/W ports and anchor.
@@ -595,6 +598,7 @@ impl ComponentKind {
             Self::WaterHeater      => "\u{2550}\u{2502}W.Heater\u{25B2}\u{2502}\u{2550}", // ═│W.Heater▲│═  fw=15 → 13 chars
             Self::Faucet           => " \u{2248} ",                  // ≈  fw=5  →  3 chars
             Self::BasinSink        => " Sink Bsn\u{2294} ",              //  Sink Bsn⊔   fw=13 → 11 chars
+            Self::BallValveH       => "\u{25CF}",                   // ●  fw=3  →  1 char
             _ => "",
         }
     }
@@ -781,7 +785,8 @@ impl Component {
     }
 
     pub fn effective_is_composite(&self) -> bool {
-        self.effective_footprint().0 > 1
+        let (fw, fh) = self.effective_footprint();
+        fw > 1 || fh > 1
     }
 
     pub fn effective_port_row(&self) -> usize {

@@ -177,11 +177,11 @@ fn test_footprint_basin_sink() {
 #[test]
 fn test_is_composite_matches_footprint() {
     for &kind in ComponentKind::all_palette() {
-        let (fw, _) = kind.footprint();
+        let (fw, fh) = kind.footprint();
         assert_eq!(
             kind.is_composite(),
-            fw > 1,
-            "{kind:?}: is_composite() mismatch with footprint width {fw}"
+            fw > 1 || fh > 1,
+            "{kind:?}: is_composite() mismatch with footprint {fw}×{fh}"
         );
     }
 }

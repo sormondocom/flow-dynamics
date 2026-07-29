@@ -110,7 +110,9 @@ impl Grid {
                                 for dc in 0..fw {
                                     if dr == pr && dc == 0 { continue; }
                                     let col = c + dc;
-                                    if row < self.height && col < self.width {
+                                    if row < self.height && col < self.width
+                                        && self.cells[row][col].is_none()
+                                    {
                                         self.satellites.insert((row, col), (r, c));
                                     }
                                 }
@@ -150,8 +152,20 @@ impl Grid {
         let Some(b) = self.get(r2, c2) else { return false; };
         let (an, as_, ae, aw) = a.connections();
         let (bn, bs, be, bw) = b.connections();
-        let a_fw = a.effective_footprint().0;
-        let b_fw = b.effective_footprint().0;
+
+        // For BallValve*, use fw=1 when placed without satellites (legacy single-cell placement).
+        let a_fw = {
+            let fw = a.effective_footprint().0;
+            if fw > 1 && matches!(a.kind, crate::components::ComponentKind::BallValveH)
+                && !(c1 + 1 < self.width && self.satellite_anchor(r1, c1 + 1) == Some((r1, c1)))
+            { 1 } else { fw }
+        };
+        let b_fw = {
+            let fw = b.effective_footprint().0;
+            if fw > 1 && matches!(b.kind, crate::components::ComponentKind::BallValveH)
+                && !(c2 + 1 < self.width && self.satellite_anchor(r2, c2 + 1) == Some((r2, c2)))
+            { 1 } else { fw }
+        };
 
         if r2 + 1 == r1 && c1 == c2 { return an && bs; }  // b directly north of a
         if r1 + 1 == r2 && c1 == c2 { return as_ && bn; } // b directly south of a
@@ -159,6 +173,40 @@ impl Grid {
         if r1 == r2 && c2 + b_fw == c1 { return aw && be; }
         // b is east of a: a's east edge (c1 + a_fw - 1) abuts b's west face (c2)
         if r1 == r2 && c1 + a_fw == c2 { return ae && bw; }
+
+        // Tall composite (fh > 1): N/S external ports at the top/bottom of the footprint.
+        // Only checks when a is a tall composite connected via N/S; symmetric check for b.
+        if c1 == c2 {
+            let (a_fw2, a_fh) = a.effective_footprint();
+            if a_fh > 1 && a_fw2 == 1 {
+                // Skip if BallValveV placed without satellites (legacy single-cell).
+                let legacy = matches!(a.kind, crate::components::ComponentKind::BallValveV)
+                    && !(r1 + 1 < self.height && self.satellite_anchor(r1 + 1, c1) == Some((r1, c1)));
+                if !legacy {
+                    let a_pr = a.effective_port_row();
+                    if r1 >= a_pr {
+                        let a_top = r1 - a_pr;
+                        if a_top > 0 && r2 + 1 == a_top { return an && bs; }
+                        let a_bot = r1 + (a_fh - 1 - a_pr);
+                        if a_bot + 1 == r2 { return as_ && bn; }
+                    }
+                }
+            }
+            let (b_fw2, b_fh) = b.effective_footprint();
+            if b_fh > 1 && b_fw2 == 1 {
+                let legacy = matches!(b.kind, crate::components::ComponentKind::BallValveV)
+                    && !(r2 + 1 < self.height && self.satellite_anchor(r2 + 1, c2) == Some((r2, c2)));
+                if !legacy {
+                    let b_pr = b.effective_port_row();
+                    if r2 >= b_pr {
+                        let b_top = r2 - b_pr;
+                        if b_top > 0 && r1 + 1 == b_top { return as_ && bn; }
+                        let b_bot = r2 + (b_fh - 1 - b_pr);
+                        if b_bot + 1 == r1 { return an && bs; }
+                    }
+                }
+            }
+        }
 
         // North inlet port (e.g. BasinSink): water enters from above the top-center.
         // The inlet cell is one row above the composite's top edge at its horizontal center.
